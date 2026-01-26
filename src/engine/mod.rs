@@ -1,6 +1,5 @@
 mod app;
 mod cam;
-mod model;
 mod pipe;
 mod state;
 mod texture;

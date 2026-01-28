@@ -123,9 +123,6 @@ impl State {
 
         let watcher_handle = watcher::Watcher::new(&["assets/shaders/block.wgsl"]).unwrap();
 
-        let shader =
-            device.create_shader_module(wgpu::include_wgsl!("../../assets/shaders/block.wgsl"));
-
         let camera = Camera::new(config.width, config.height);
 
         let camera_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -247,6 +244,7 @@ impl State {
         if self.watcher.is_dirty() {
             log::info!("Reloading shaders...");
             self.pipeline.reload_shader(&self.device);
+            self.watcher.take_modified_files();
         }
         self.camera_controller.update_camera(&mut self.camera);
         self.queue.write_buffer(

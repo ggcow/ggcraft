@@ -1,6 +1,6 @@
 // Vertex shader
 @group(1) @binding(0)
-var<uniform> mvp:  mat4x4<f32>;
+var<uniform> mvp: mat4x4<f32>;
 
 struct VertexInput {
     @builtin(vertex_index) vertexid: u32,
@@ -22,7 +22,7 @@ const M: array<mat3x3<f32>, 6> = array<mat3x3<f32>, 6>(
     mat3x3<f32>(0, 0, 1, 1, 0, 0, 0, 0, 0),  //-y
     mat3x3<f32>(1, 0, 0, 0, 0, 1, 0, 1, 0), //+y
     mat3x3<f32>(1, 0, 0, 0, 1, 0, 0, 0, 0),  //-z
-    mat3x3<f32>(0, 1, 0, 1, 0, 0, 0, 0, 1)  //+z
+    mat3x3<f32>(0, 1, 0, 1, 0, 0, 0, 0, 1)//+z
 );
 
 const normals: array<vec3<f32>, 6> = array<vec3<f32>, 6>(
@@ -72,7 +72,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
     let texture_color: vec4<f32> = textureSample(t_diffuse, s_diffuse, vec2<f32>(in.tex_coords.x, 1.0 - in.tex_coords.y));
     let final_color: vec3<f32> = texture_color.xyz * diffuse;
-    return vec4<f32>(vec3<f32>((f32(in.square_index)+0.1) / 6.0), 1);
+    return vec4<f32>(vec3<f32>((f32(in.square_index) + 0.1) / 6.0), 1);
     // return vec4<f32>(final_color, texture_color.w);
 }
  

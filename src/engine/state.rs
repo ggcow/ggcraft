@@ -24,7 +24,7 @@ pub struct State {
     camera_bind_group: wgpu::BindGroup,
     camera_controller: CameraController,
     instance_buffer: wgpu::Buffer,
-    world: world::Chunk,
+    world: world::World,
     depth_texture: texture::Texture,
     watcher: watcher::Watcher,
 }
@@ -118,8 +118,7 @@ impl State {
             label: Some("diffuse_bind_group"),
         });
 
-        let mut world = world::Chunk::new();
-        world.mesh = world.greedy_mesh();
+        let world = world::World::new();
 
         let watcher_handle = watcher::Watcher::new(&["assets/shaders/block.wgsl"]).unwrap();
 
@@ -158,7 +157,7 @@ impl State {
 
         let instance_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Instance Buffer"),
-            contents: bytemuck::cast_slice(&world.mesh),
+            contents: bytemuck::cast_slice(&world.faces()),
             usage: wgpu::BufferUsages::VERTEX,
         });
 
@@ -302,7 +301,7 @@ impl State {
             render_pass.set_vertex_buffer(0, self.instance_buffer.slice(..));
             render_pass.set_bind_group(0, &self.diffuse_bind_group, &[]);
             render_pass.set_bind_group(1, &self.camera_bind_group, &[]);
-            render_pass.draw(0..4, 0..self.world.mesh.len() as u32);
+            render_pass.draw(0..4, 0..self.world.faces().len() as u32);
         }
 
         // submit will accept anything that implements IntoIter

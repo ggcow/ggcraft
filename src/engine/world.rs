@@ -1,219 +1,101 @@
-const CHUNK_SIZE: usize = 16;
+use crate::engine::mca::reader::McLoader;
 
-#[derive(Copy, Clone, PartialEq)]
-enum BlockType {
-    Air = 0,
-    Stone = 1,
+pub struct World {
+    faces: Vec<Face>,
 }
-
-#[derive(Clone)]
-pub struct Chunk {
-    blocks: [BlockType; CHUNK_SIZE * CHUNK_SIZE * CHUNK_SIZE],
-    position: (i32, i32, i32),
-    pub mesh: Vec<Face>,
-}
-
-impl Chunk {
+impl World {
     pub fn new() -> Self {
-        Self {
-            blocks: [BlockType::Stone; CHUNK_SIZE * CHUNK_SIZE * CHUNK_SIZE],
-            position: (0, 0, 0),
-            mesh: Vec::new(),
-        }
-    }
+        let mut loader = McLoader::new();
 
-    fn index(x: usize, y: usize, z: usize) -> usize {
-        x + CHUNK_SIZE * (y + CHUNK_SIZE * z)
-    }
+        // const SPACE_BETWEEN: f32 = 2.0;
+        // const NUM_INSTANCES_PER_ROW: u32 = 16;
 
-    fn get(&self, x: usize, y: usize, z: usize) -> BlockType {
-        self.blocks[Self::index(x, y, z)]
-    }
-
-    fn set(&mut self, x: usize, y: usize, z: usize, value: BlockType) {
-        self.blocks[Self::index(x, y, z)] = value;
-    }
-
-    pub fn greedy_mesh(&self) -> Vec<Face> {
-        let mut faces = Vec::new();
-        for axis in 0..3 {
-            // 0=X, 1=Y, 2=Z
-            for dir in 0..2 {
-                // 0=Neg, 1=Pos
-                faces.extend(self.mesh_axis(axis, dir));
-            }
-        }
-        for face in &faces {
-            println!(
-                "Face at position {:?} with size {:?}",
-                face.position, face.size
-            );
-        }
-
-        faces
-    }
-
-    fn mesh_axis(&self, axis: usize, dir: usize) -> Vec<Face> {
-        let mut faces = Vec::new();
-        let u_size = CHUNK_SIZE;
-        let v_size = CHUNK_SIZE;
-        let w_size = CHUNK_SIZE;
-
-        for w in 0..w_size {
-            let mut mask = vec![BlockType::Air; u_size * v_size];
-
-            // construire le mask
-            for v in 0..v_size {
-                for u in 0..u_size {
-                    let (x, y, z) = match axis {
-                        0 => (w, u, v),
-                        1 => (u, w, v),
-                        2 => (u, v, w),
-                        _ => unreachable!(),
+        let mut ret = Vec::new();
+        let mut blocks = vec![vec![vec![0u8; 128]; 320]; 128];
+        for x in -64..64 {
+            for z in -64..64 {
+                for y in 0..320 {
+                    let name = loader.get_block_name([x, y, z]);
+                    // let x = SPACE_BETWEEN * (x as f32 - NUM_INSTANCES_PER_ROW as f32 / 2.0);
+                    // let y = SPACE_BETWEEN * (y as f32 - NUM_INSTANCES_PER_ROW as f32 / 2.0);
+                    // let z = SPACE_BETWEEN * (z as f32 - NUM_INSTANCES_PER_ROW as f32 / 2.0);
+                    let Some(name) = name else {
+                        continue;
                     };
 
-                    let neighbor = match (axis, dir) {
-                        (0, 0) => {
-                            if w > 0 {
-                                self.get(w - 1, u, v)
-                            } else {
-                                BlockType::Air
-                            }
-                        }
-                        (0, 1) => {
-                            if w + 1 < CHUNK_SIZE {
-                                self.get(w + 1, u, v)
-                            } else {
-                                BlockType::Air
-                            }
-                        }
-                        (1, 0) => {
-                            if w > 0 {
-                                self.get(u, w - 1, v)
-                            } else {
-                                BlockType::Air
-                            }
-                        }
-                        (1, 1) => {
-                            if w + 1 < CHUNK_SIZE {
-                                self.get(u, w + 1, v)
-                            } else {
-                                BlockType::Air
-                            }
-                        }
-                        (2, 0) => {
-                            if w > 0 {
-                                self.get(u, v, w - 1)
-                            } else {
-                                BlockType::Air
-                            }
-                        }
-                        (2, 1) => {
-                            if w + 1 < CHUNK_SIZE {
-                                self.get(u, v, w + 1)
-                            } else {
-                                BlockType::Air
-                            }
-                        }
-                        _ => unreachable!(),
-                    };
-
-                    let current = self.get(x, y, z);
-                    mask[u + v * u_size] = if current != BlockType::Air && current != neighbor {
-                        current
-                    } else {
-                        BlockType::Air
-                    };
-                }
-            }
-
-            // Greedy rectangle
-            let mut visited = vec![false; u_size * v_size];
-            for v in 0..v_size {
-                for u in 0..u_size {
-                    let idx = u + v * u_size;
-                    if mask[idx] == BlockType::Air || visited[idx] {
+                    if name == "minecraft:air" {
                         continue;
                     }
 
-                    let block_type = mask[idx];
-                    let mut width = 1;
-                    while u + width < u_size
-                        && mask[u + width + v * u_size] == block_type
-                        && !visited[u + width + v * u_size]
-                    {
-                        width += 1;
-                    }
-
-                    let mut height = 1;
-                    'outer: while v + height < v_size {
-                        for du in 0..width {
-                            if mask[u + du + (v + height) * u_size] != block_type
-                                || visited[u + du + (v + height) * u_size]
-                            {
-                                break 'outer;
-                            }
-                        }
-                        height += 1;
-                    }
-
-                    // Marquer visité
-                    for dv in 0..height {
-                        for du in 0..width {
-                            visited[u + du + (v + dv) * u_size] = true;
-                        }
-                    }
-
-                    // Calculer coords selon axis
-                    let (x, y, z) = match axis {
-                        0 => (w, u, v),
-                        1 => (u, w, v),
-                        2 => (u, v, w),
-                        _ => unreachable!(),
-                    };
-
-                    let direction = match (axis, dir) {
-                        (0, 0) => 0, // -X
-                        (0, 1) => 1, // +X
-                        (1, 0) => 2, // -Y
-                        (1, 1) => 3, // +Y
-                        (2, 0) => 4, // -Z
-                        (2, 1) => 5, // +Z
-                        _ => unreachable!(),
-                    };
-
-                    faces.push(Face {
-                        position: [x as i32, y as i32, z as i32, direction],
-                        size: [width as i32, height as i32],
-                    });
+                    blocks[(x + 64) as usize][(y) as usize][(z + 64) as usize] = 1;
                 }
             }
         }
 
-        faces
+        for x in 0..128 {
+            for z in 0..128 {
+                for y in 0..320 {
+                    if blocks[x][y][z] == 0 {
+                        continue;
+                    }
+
+                    // left
+                    if x == 0 || blocks[x - 1][y][z] == 0 {
+                        ret.push(Face {
+                            position: [x as i32, y as i32, z as i32, 0],
+                            size: [1, 1],
+                        });
+                    }
+
+                    // right
+                    if x == 127 || blocks[x + 1][y][z] == 0 {
+                        ret.push(Face {
+                            position: [x as i32, y as i32, z as i32, 1],
+                            size: [1, 1],
+                        });
+                    }
+
+                    // down
+                    if y == 0 || blocks[x][y - 1][z] == 0 {
+                        ret.push(Face {
+                            position: [x as i32, y as i32, z as i32, 2],
+                            size: [1, 1],
+                        });
+                    }
+
+                    // up
+                    if y == 319 || blocks[x][y + 1][z] == 0 {
+                        ret.push(Face {
+                            position: [x as i32, y as i32, z as i32, 3],
+                            size: [1, 1],
+                        });
+                    }
+
+                    // back
+                    if z == 0 || blocks[x][y][z - 1] == 0 {
+                        ret.push(Face {
+                            position: [x as i32, y as i32, z as i32, 4],
+                            size: [1, 1],
+                        });
+                    }
+
+                    // front
+                    if z == 127 || blocks[x][y][z + 1] == 0 {
+                        ret.push(Face {
+                            position: [x as i32, y as i32, z as i32, 5],
+                            size: [1, 1],
+                        });
+                    }
+                }
+            }
+        }
+
+        Self { faces: ret }
     }
-}
 
-#[derive(Debug, Clone, Copy)]
-enum Axis {
-    X,
-    Y,
-    Z,
-}
-
-#[derive(Debug, Clone, Copy)]
-enum DirectionSign {
-    Pos,
-    Neg,
-}
-
-enum Direction {
-    NegativeX = 0,
-    PositiveX = 1,
-    NegativeZ = 2,
-    PositiveZ = 3,
-    NegativeY = 4,
-    PositiveY = 5,
+    pub fn faces(&self) -> &[Face] {
+        self.faces.as_slice()
+    }
 }
 
 #[repr(C)]

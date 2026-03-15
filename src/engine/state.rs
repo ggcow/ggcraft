@@ -1,7 +1,4 @@
-use std::{
-    path::Path,
-    sync::{Arc, atomic::Ordering},
-};
+use std::sync::Arc;
 use wgpu::util::DeviceExt as _;
 use winit::{event_loop::ActiveEventLoop, keyboard::KeyCode, window::Window};
 
@@ -27,6 +24,7 @@ pub struct State {
     world: world::World,
     depth_texture: texture::Texture,
     watcher: watcher::Watcher,
+    msaa_texture: texture::Texture,
 }
 
 impl State {
@@ -118,6 +116,8 @@ impl State {
             label: Some("diffuse_bind_group"),
         });
 
+        let msaa_texture = texture::Texture::create_msaa_texture(&device, &config, "msaa_texture");
+
         let world = world::World::new();
 
         let watcher_handle = watcher::Watcher::new(&["assets/shaders/block.wgsl"]).unwrap();
@@ -195,6 +195,7 @@ impl State {
             world,
             depth_texture,
             watcher: watcher_handle,
+            msaa_texture,
         })
     }
 
@@ -208,6 +209,9 @@ impl State {
             self.camera.aspect = self.config.width as f32 / self.config.height as f32;
             self.depth_texture =
                 texture::Texture::create_depth_texture(&self.device, &self.config, "depth_texture");
+            self.msaa_texture =
+                texture::Texture::create_msaa_texture(&self.device, &self.config, "msaa_texture");
+
             self.window.request_redraw();
         }
     }
@@ -261,7 +265,7 @@ impl State {
         }
 
         let output = self.surface.get_current_texture()?;
-        let view = output
+        let output_view = output
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
 
@@ -277,8 +281,8 @@ impl State {
                 color_attachments: &[
                     // This is what @location(0) in the fragment shader targets
                     Some(wgpu::RenderPassColorAttachment {
-                        view: &view,
-                        resolve_target: None,
+                        view: &self.msaa_texture.view,
+                        resolve_target: Some(&output_view),
                         ops: wgpu::Operations {
                             load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
                             store: wgpu::StoreOp::Store,

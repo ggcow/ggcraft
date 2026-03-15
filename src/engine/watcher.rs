@@ -3,15 +3,11 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
 };
 
-use notify::{
-    Config, Event, ReadDirectoryChangesWatcher, RecommendedWatcher, RecursiveMode, Result,
-    Watcher as _,
-};
+use notify::{Config, Event, RecommendedWatcher, RecursiveMode, Result, Watcher as _};
 
 pub struct Watcher {
     dirty: Arc<AtomicBool>,
     modified_files: Arc<Mutex<Vec<std::path::PathBuf>>>,
-    watcher: ReadDirectoryChangesWatcher,
 }
 
 impl Watcher {
@@ -41,10 +37,11 @@ impl Watcher {
             watcher.watch(path, RecursiveMode::NonRecursive)?;
         }
 
+        std::mem::forget(watcher);
+
         Ok(Watcher {
             dirty,
             modified_files,
-            watcher,
         })
     }
 

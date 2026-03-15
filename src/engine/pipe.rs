@@ -1,7 +1,6 @@
 use derive_more::Deref;
 use std::path::{Path, PathBuf};
 use wgpu::naga::{
-    self,
     front::wgsl,
     valid::{Capabilities, ValidationFlags, Validator},
 };

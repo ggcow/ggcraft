@@ -19,7 +19,7 @@ impl Camera {
             up: vector![0., 1., 0.],
             aspect: width as f32 / height as f32,
             fovy: 45.0_f32.to_radians(),
-            znear: 0.001,
+            znear: 0.0001,
             zfar: 10000.0,
         }
     }

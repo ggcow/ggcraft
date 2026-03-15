@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use winit::{
     application::ApplicationHandler,
-    dpi::LogicalSize,
     event::{KeyEvent, WindowEvent},
     event_loop::ActiveEventLoop,
     keyboard::PhysicalKey,
@@ -25,10 +24,8 @@ impl ApplicationHandler<State> for App {
                 .create_window(Window::default_attributes())
                 .unwrap(),
         );
-        window.set_cursor_visible(false); // cache le curseur
-        window
-            .set_cursor_grab(CursorGrabMode::Confined) // confine le curseur dans la fenêtre
-            .unwrap();
+        window.set_cursor_visible(false);
+        window.set_cursor_grab(CursorGrabMode::Confined).unwrap();
         self.state = Some(pollster::block_on(State::new(window)).unwrap());
     }
 
@@ -74,13 +71,12 @@ impl ApplicationHandler<State> for App {
                 state.update();
                 match state.render() {
                     Ok(_) => {}
-                    // Reconfigure the surface if it's lost or outdated
                     Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
                         let size = state.window.inner_size();
                         state.resize(size.width, size.height);
                     }
                     Err(e) => {
-                        log::error!("Unable to render {}", e);
+                        log::error!("Unable to render {e}");
                     }
                 }
             }

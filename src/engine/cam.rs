@@ -2,7 +2,7 @@ use nalgebra::{Matrix4, Point3, Vector3, point, vector};
 use winit::keyboard::KeyCode;
 
 pub struct Camera {
-    eye: Point3<f32>,
+    pub eye: Point3<f32>,
     target: Point3<f32>,
     up: Vector3<f32>,
     pub aspect: f32,
@@ -19,7 +19,7 @@ impl Camera {
             up: vector![0., 1., 0.],
             aspect: width as f32 / height as f32,
             fovy: 45.0_f32.to_radians(),
-            znear: 0.0001,
+            znear: 0.001,
             zfar: 10000.0,
         }
     }
@@ -116,7 +116,6 @@ impl CameraController {
         .normalize();
 
         let right = forward.cross(&camera.up).normalize();
-        let up = right.cross(&forward).normalize();
 
         let mut velocity = self.speed;
         if self.is_boost_pressed {
@@ -138,10 +137,10 @@ impl CameraController {
             camera.eye -= right * velocity;
         }
         if self.is_up_pressed {
-            camera.eye += up * velocity;
+            camera.eye.y += velocity;
         }
         if self.is_down_pressed {
-            camera.eye -= up * velocity;
+            camera.eye.y -= velocity;
         }
 
         camera.target = camera.eye + forward;

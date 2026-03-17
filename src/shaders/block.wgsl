@@ -72,7 +72,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
     let texture_color: vec4<f32> = textureSample(t_diffuse, s_diffuse, vec2<f32>(in.tex_coords.x, 1.0 - in.tex_coords.y));
     let final_color: vec3<f32> = texture_color.xyz * diffuse;
-    return vec4<f32>(final_color, texture_color.w);
+    return vec4<f32>(vec3<f32>((f32(in.square_index) + 0.1) / 6.0), 1);
 }
  
  

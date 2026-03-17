@@ -1,5 +1,9 @@
 use std::sync::Arc;
 use wgpu::util::DeviceExt as _;
+use wgpu_text::{
+    BrushBuilder, TextBrush,
+    glyph_brush::{Section as TextSection, Text},
+};
 use winit::{event_loop::ActiveEventLoop, keyboard::KeyCode, window::Window};
 
 use crate::engine::{
@@ -25,6 +29,10 @@ pub struct State {
     depth_texture: texture::Texture,
     watcher: watcher::Watcher,
     msaa_texture: texture::Texture,
+    brush: TextBrush<wgpu_text::glyph_brush::ab_glyph::FontRef<'static>>,
+    counting_renders_since: std::time::Instant,
+    renders_fps: u64,
+    debug_text: String,
 }
 
 impl State {
@@ -120,7 +128,7 @@ impl State {
 
         let world = world::World::new();
 
-        let watcher_handle = watcher::Watcher::new(&["assets/shaders/block.wgsl"]).unwrap();
+        let watcher_handle = watcher::Watcher::new(&["src/shaders/block.wgsl"]).unwrap();
 
         let camera = Camera::new(config.width, config.height);
 
@@ -170,13 +178,19 @@ impl State {
 
         let pipeline = pipe::Pipeline::new(
             &device,
-            "assets/shaders/block.wgsl",
+            "src/shaders/block.wgsl",
             "Render Pipeline",
             render_pipeline_layout.clone(),
             world::Face::layout(),
             config.format,
             Some(texture::Texture::DEPTH_FORMAT),
         );
+
+        let brush =
+            BrushBuilder::using_font_bytes(include_bytes!("../../assets/fonts/TTT-Regular.otf"))
+                .unwrap()
+                // .initial_cache_size((16_384, 16_384)) // use this to avoid resizing cache texture
+                .build(&device, config.width, config.height, config.format);
 
         Ok(Self {
             surface,
@@ -196,11 +210,17 @@ impl State {
             depth_texture,
             watcher: watcher_handle,
             msaa_texture,
+            brush,
+            debug_text: String::new(),
+            counting_renders_since: std::time::Instant::now(),
+            renders_fps: 0,
         })
     }
 
     pub fn resize(&mut self, width: u32, height: u32) {
         if width > 0 && height > 0 {
+            self.brush
+                .resize_view(width as f32, height as f32, &self.queue);
             self.config.width = width;
             self.config.height = height;
             self.surface.configure(&self.device, &self.config);
@@ -244,6 +264,12 @@ impl State {
     }
 
     pub fn update(&mut self) {
+        self.renders_fps += 1;
+        if self.counting_renders_since.elapsed().as_secs() >= 1 {
+            self.debug_text = format!("FPS: {}\npos: {:?}", self.renders_fps, self.camera.eye);
+            self.renders_fps = 0;
+            self.counting_renders_since += std::time::Duration::from_secs(1);
+        }
         if self.watcher.is_dirty() {
             log::info!("Reloading shaders...");
             self.pipeline.reload_shader(&self.device);
@@ -306,6 +332,35 @@ impl State {
             render_pass.set_bind_group(0, &self.diffuse_bind_group, &[]);
             render_pass.set_bind_group(1, &self.camera_bind_group, &[]);
             render_pass.draw(0..4, 0..self.world.faces().len() as u32);
+        }
+
+        {
+            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("Render Pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &output_view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    },
+                    depth_slice: None,
+                })],
+                depth_stencil_attachment: None,
+                ..Default::default()
+            });
+
+            let section = TextSection::default().add_text(
+                Text::new(&self.debug_text)
+                    .with_color([1., 0., 0., 1.])
+                    .with_scale(42.),
+            );
+
+            self.brush
+                .queue(&self.device, &self.queue, &[section])
+                .unwrap();
+
+            self.brush.draw(&mut render_pass);
         }
 
         // submit will accept anything that implements IntoIter

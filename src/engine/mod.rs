@@ -9,4 +9,5 @@ mod world;
 
 pub struct App {
     state: Option<state::State>,
+    last_time: std::time::Instant,
 }

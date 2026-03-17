@@ -13,7 +13,10 @@ use crate::engine::App;
 
 impl App {
     pub fn new() -> Self {
-        Self { state: None }
+        Self {
+            state: None,
+            last_time: std::time::Instant::now(),
+        }
     }
 }
 
@@ -68,7 +71,10 @@ impl ApplicationHandler<State> for App {
             WindowEvent::CloseRequested => event_loop.exit(),
             WindowEvent::Resized(size) => state.resize(size.width, size.height),
             WindowEvent::RedrawRequested => {
-                state.update();
+                let dt = self.last_time.elapsed();
+                self.last_time = std::time::Instant::now();
+
+                state.update(dt);
                 match state.render() {
                     Ok(_) => {}
                     Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {

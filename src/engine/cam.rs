@@ -53,7 +53,7 @@ pub struct CameraController {
 impl CameraController {
     pub fn new() -> Self {
         Self {
-            speed: 0.005,
+            speed: 5.,
             is_forward_pressed: false,
             is_backward_pressed: false,
             is_left_pressed: false,
@@ -107,7 +107,7 @@ impl CameraController {
         }
     }
 
-    pub fn update_camera(&self, camera: &mut Camera) {
+    pub fn update_camera(&self, camera: &mut Camera, dt: std::time::Duration) {
         let forward = vector![
             self.yaw.cos() * self.pitch.cos(),
             self.pitch.sin(),
@@ -117,7 +117,7 @@ impl CameraController {
 
         let right = forward.cross(&camera.up).normalize();
 
-        let mut velocity = self.speed;
+        let mut velocity = self.speed * dt.as_secs_f32();
         if self.is_boost_pressed {
             velocity *= 5.0;
         }

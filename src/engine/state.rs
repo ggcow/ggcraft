@@ -263,7 +263,7 @@ impl State {
         self.camera_controller.handle_mouse_move(dx, dy);
     }
 
-    pub fn update(&mut self) {
+    pub fn update(&mut self, dt: std::time::Duration) {
         self.renders_fps += 1;
         if self.counting_renders_since.elapsed().as_secs() >= 1 {
             self.debug_text = format!("FPS: {}\npos: {:?}", self.renders_fps, self.camera.eye);
@@ -275,7 +275,7 @@ impl State {
             self.pipeline.reload_shader(&self.device);
             self.watcher.take_modified_files();
         }
-        self.camera_controller.update_camera(&mut self.camera);
+        self.camera_controller.update_camera(&mut self.camera, dt);
         self.queue.write_buffer(
             &self.camera_buffer,
             0,

@@ -1,4 +1,5 @@
 mod app;
+mod atlas;
 mod cam;
 mod mca;
 mod pipe;

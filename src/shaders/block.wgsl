@@ -6,14 +6,7 @@ struct VertexInput {
     @builtin(vertex_index) vertexid: u32,
     @location(0) cube_position: vec4<i32>,
     @location(1) cube_size: vec3<i32>,
-}
-
-struct VertexOutput {
-    @builtin(position) clip_position: vec4<f32>,
-    @location(0) tex_coords: vec2<f32>,
-    @location(1) normal: vec3<f32>,
-    @location(2) frag_position: vec3<f32>,
-    @location(3) square_index: i32,
+    @location(2) tex_index: u32,
 }
 
 const M: array<mat3x3<f32>, 6> = array<mat3x3<f32>, 6>(
@@ -50,19 +43,30 @@ fn vs_main(in: VertexInput) -> VertexOutput {
     let index = in.cube_position.w;
     let scaled = M[index] * vec3<f32>(corner, 1) * vec3<f32>(in.cube_size);
     let position = vec3<f32>(in.cube_position.xyz) + scaled;
-    out.tex_coords = M2[index / 2] * scaled;
+    let tex_coords = M2[index / 2] * scaled;
+    out.tex_coords = vec2<f32>(tex_coords.x, 1.0 - tex_coords.y);
     out.normal = normals[index];
     out.clip_position = mvp * vec4<f32>(position, 1);
     out.frag_position = position;
     out.square_index = index;
+    out.tex_index = in.tex_index;
     return out;
+}
+
+struct VertexOutput {
+    @builtin(position) clip_position: vec4<f32>,
+    @location(0) tex_coords: vec2<f32>,
+    @location(1) normal: vec3<f32>,
+    @location(2) frag_position: vec3<f32>,
+    @location(3) square_index: i32,
+    @location(4) tex_index: u32,
 }
  
 // Fragment shader
 @group(0) @binding(0)
-var t_diffuse: texture_2d<f32>;
+var tex: texture_2d_array<f32>;
 @group(0) @binding(1)
-var s_diffuse: sampler;
+var samp: sampler;
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
@@ -77,7 +81,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let spec: f32 = pow(max(dot(view_dir, reflect_dir), 0.0), 32.0);
     let diffuse: vec3<f32> = (ambient + diff * light_color) + (specular_strength * spec * light_color);
 
-    let texture_color: vec4<f32> = textureSample(t_diffuse, s_diffuse, vec2<f32>(in.tex_coords.x, 1.0 - in.tex_coords.y));
+    let texture_color: vec4<f32> = textureSample(tex, samp, in.tex_coords, in.tex_index);
     let final_color: vec3<f32> = texture_color.xyz * diffuse;
     // return vec4<f32>(vec3<f32>((f32(in.square_index) + 0.1) / 6.0), 1);
     return vec4<f32>(final_color, 1);

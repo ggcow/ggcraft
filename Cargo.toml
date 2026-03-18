@@ -31,3 +31,4 @@ serde = "1.0.228"
 fastanvil = "0.32.0"
 fastnbt = "2.6.1"
 wgpu_text = "28.0.1"
+generate_enum = { path = "src/generate_enum" }

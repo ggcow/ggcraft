@@ -7,6 +7,7 @@ use wgpu_text::{
 use winit::{event_loop::ActiveEventLoop, keyboard::KeyCode, window::Window};
 
 use crate::engine::{
+    atlas,
     cam::{Camera, CameraController},
     pipe, texture, watcher, world,
 };
@@ -19,7 +20,7 @@ pub struct State {
     is_surface_configured: bool,
     pub window: Arc<Window>,
     pipeline: pipe::Pipeline,
-    diffuse_bind_group: wgpu::BindGroup,
+    atlas: atlas::Atlas,
     camera: Camera,
     camera_buffer: wgpu::Buffer,
     camera_bind_group: wgpu::BindGroup,
@@ -84,46 +85,6 @@ impl State {
         let depth_texture =
             texture::Texture::create_depth_texture(&device, &config, "depth_texture");
 
-        let diffuse_bytes = include_bytes!("../../assets/textures/diamond_block.png");
-        let diffuse_texture =
-            texture::Texture::from_bytes(&device, &queue, diffuse_bytes, "happy-tree.png").unwrap();
-        let texture_bind_group_layout =
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                entries: &[
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 0,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Texture {
-                            multisampled: false,
-                            view_dimension: wgpu::TextureViewDimension::D2,
-                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                        },
-                        count: None,
-                    },
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 1,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                        count: None,
-                    },
-                ],
-                label: Some("texture_bind_group_layout"),
-            });
-        let diffuse_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: &texture_bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&diffuse_texture.view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::Sampler(&diffuse_texture.sampler),
-                },
-            ],
-            label: Some("diffuse_bind_group"),
-        });
-
         let msaa_texture = texture::Texture::create_msaa_texture(&device, &config, "msaa_texture");
 
         let world = world::World::new();
@@ -169,6 +130,10 @@ impl State {
             usage: wgpu::BufferUsages::VERTEX,
         });
 
+        let atlas = atlas::Atlas::new(&device, &queue);
+        let texture_bind_group_layout = &atlas.bind_group_layout;
+        let diffuse_bind_group = &atlas.bind_group;
+
         let render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Render Pipeline Layout"),
@@ -200,7 +165,7 @@ impl State {
             is_surface_configured: false,
             window,
             pipeline,
-            diffuse_bind_group,
+            atlas,
             camera,
             camera_buffer,
             camera_bind_group,
@@ -329,7 +294,7 @@ impl State {
 
             render_pass.set_pipeline(&self.pipeline);
             render_pass.set_vertex_buffer(0, self.instance_buffer.slice(..));
-            render_pass.set_bind_group(0, &self.diffuse_bind_group, &[]);
+            render_pass.set_bind_group(0, &self.atlas.bind_group, &[]);
             render_pass.set_bind_group(1, &self.camera_bind_group, &[]);
             render_pass.draw(0..4, 0..self.world.faces().len() as u32);
         }

@@ -53,7 +53,7 @@ impl McLoader<'_> {
         self.chunks
             .entry((cx, cz))
             .or_insert_with(|| {
-                println!("loading chunk {cx}.{cz}");
+                // println!("loading chunk {cx}.{cz}");
                 let chunk = region
                     .read_chunk(cx.rem_euclid(32) as usize, cz.rem_euclid(32) as usize)
                     .ok()??;

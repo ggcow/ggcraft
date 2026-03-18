@@ -4,7 +4,7 @@ use crate::engine::{atlas, mca::reader::McLoader};
 
 macro_rules! SIZE {
     () => {
-        64
+        512
     };
 }
 
@@ -17,6 +17,7 @@ impl World {
         let mut textures = HashSet::new();
 
         let mut blocks = vec![vec![vec![None; SIZE!()]; 320]; SIZE!()];
+
         for x in 0..SIZE!() {
             for z in 0..SIZE!() {
                 for y in 0..320 {
@@ -37,6 +38,7 @@ impl World {
                     textures.insert(name);
                 }
             }
+            println!("{}%", (x as f32 / SIZE!() as f32) * 100.0);
         }
 
         for texture in textures {

@@ -8,7 +8,7 @@ use fastanvil::Region;
 use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
 
-const WORLD_REGIONS: &'static str = "/home/unclek/Downloads/hermitcraft10/region";
+const WORLD_REGIONS: &'static str = "../hermitcraft10/region";
 
 pub struct McLoader<'a> {
     regions: FxHashMap<(i32, i32), Option<Region<File>>>,

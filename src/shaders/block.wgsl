@@ -5,7 +5,7 @@ var<uniform> mvp: mat4x4<f32>;
 struct VertexInput {
     @builtin(vertex_index) vertexid: u32,
     @location(0) cube_position: vec4<i32>,
-    @location(1) cube_size: vec2<i32>,
+    @location(1) cube_size: vec3<i32>,
 }
 
 struct VertexOutput {
@@ -17,21 +17,27 @@ struct VertexOutput {
 }
 
 const M: array<mat3x3<f32>, 6> = array<mat3x3<f32>, 6>(
-    mat3x3<f32>(0, 1, 0, 0, 0, 1, 0, 0, 0),  //-x
-    mat3x3<f32>(0, 0, 1, 0, 1, 0, 1, 0, 0),  //+x
-    mat3x3<f32>(0, 0, 1, 1, 0, 0, 0, 0, 0),  //-y
-    mat3x3<f32>(1, 0, 0, 0, 0, 1, 0, 1, 0),  //+y
-    mat3x3<f32>(1, 0, 0, 0, 1, 0, 0, 0, 0),  //-z
-    mat3x3<f32>(0, 1, 0, 1, 0, 0, 0, 0, 1),  //+z
+    mat3x3<f32>(0, 1, 0, 0, 0, 1, 0, 0, 0), //-x
+    mat3x3<f32>(0, 0, 1, 0, 1, 0, 1, 0, 0), //+x
+    mat3x3<f32>(0, 0, 1, 1, 0, 0, 0, 0, 0), //-y
+    mat3x3<f32>(1, 0, 0, 0, 0, 1, 0, 1, 0), //+y
+    mat3x3<f32>(1, 0, 0, 0, 1, 0, 0, 0, 0), //-z
+    mat3x3<f32>(0, 1, 0, 1, 0, 0, 0, 0, 1), //+z
+);
+
+const M2: array<mat3x2<f32>, 3> = array<mat3x2<f32>, 3>(
+    mat3x2<f32>(0, 0, 1, 0, 0, 1), // x
+    mat3x2<f32>(1, 0, 0, 0, 0, 1), // y
+    mat3x2<f32>(1, 0, 0, 1, 0, 0), // z
 );
 
 const normals: array<vec3<f32>, 6> = array<vec3<f32>, 6>(
-    vec3<f32>(-1, 0, 0),
-    vec3<f32>(1, 0, 0),
-    vec3<f32>(0, -1, 0),
-    vec3<f32>(0, 1, 0),
-    vec3<f32>(0, 0, -1),
-    vec3<f32>(0, 0, 1),
+    vec3<f32>(-1, 0, 0), //-x
+    vec3<f32>(1, 0, 0),  //+x
+    vec3<f32>(0, -1, 0), //-y
+    vec3<f32>(0, 1, 0),  //+y
+    vec3<f32>(0, 0, -1), //-z
+    vec3<f32>(0, 0, 1),  //+z
 );
 
 @vertex
@@ -42,8 +48,9 @@ fn vs_main(in: VertexInput) -> VertexOutput {
         f32((in.vertexid >> 1) & 1),
     );
     let index = in.cube_position.w;
-    let position = M[index] * vec3<f32>(corner * vec2<f32>(in.cube_size), 1) + vec3<f32>(in.cube_position.xyz);
-    out.tex_coords = corner;
+    let scaled = M[index] * vec3<f32>(corner, 1) * vec3<f32>(in.cube_size);
+    let position = vec3<f32>(in.cube_position.xyz) + scaled;
+    out.tex_coords = M2[index / 2] * scaled;
     out.normal = normals[index];
     out.clip_position = mvp * vec4<f32>(position, 1);
     out.frag_position = position;

@@ -7,7 +7,6 @@ impl World {
     pub fn new() -> Self {
         let mut loader = McLoader::new();
 
-        let mut ret = Vec::new();
         let mut blocks = vec![vec![vec![0u8; 64 * 2]; 320]; 64 * 2];
         for x in 0..128 {
             for z in 0..128 {
@@ -26,54 +25,34 @@ impl World {
             }
         }
 
-        for x in 0..128 {
-            for z in 0..128 {
-                for y in 0..320 {
-                    if blocks[x][y][z] == 0 {
-                        continue;
-                    }
+        let faces = vec![
+            Face {
+                position: [0, 0, 0, 0],
+                size: [10, 50, 100],
+            },
+            Face {
+                position: [0, 0, 0, 1],
+                size: [10, 50, 100],
+            },
+            Face {
+                position: [0, 0, 0, 2],
+                size: [10, 50, 100],
+            },
+            Face {
+                position: [0, 0, 0, 3],
+                size: [10, 50, 100],
+            },
+            Face {
+                position: [0, 0, 0, 4],
+                size: [10, 50, 100],
+            },
+            Face {
+                position: [0, 0, 0, 5],
+                size: [10, 50, 100],
+            },
+        ];
 
-                    if x == 0 || blocks[x - 1][y][z] == 0 {
-                        ret.push(Face {
-                            position: [x as i32, y as i32, z as i32, 0],
-                            size: [1, 1],
-                        });
-                    }
-                    if x == 127 as usize || blocks[x + 1][y][z] == 0 {
-                        ret.push(Face {
-                            position: [x as i32, y as i32, z as i32, 1],
-                            size: [1, 1],
-                        });
-                    }
-                    if y == 0 || blocks[x][y - 1][z] == 0 {
-                        ret.push(Face {
-                            position: [x as i32, y as i32, z as i32, 2],
-                            size: [1, 1],
-                        });
-                    }
-                    if y == 319 || blocks[x][y + 1][z] == 0 {
-                        ret.push(Face {
-                            position: [x as i32, y as i32, z as i32, 3],
-                            size: [1, 1],
-                        });
-                    }
-                    if z == 0 || blocks[x][y][z - 1] == 0 {
-                        ret.push(Face {
-                            position: [x as i32, y as i32, z as i32, 4],
-                            size: [1, 1],
-                        });
-                    }
-                    if z == 127 as usize || blocks[x][y][z + 1] == 0 {
-                        ret.push(Face {
-                            position: [x as i32, y as i32, z as i32, 5],
-                            size: [1, 1],
-                        });
-                    }
-                }
-            }
-        }
-
-        Self { faces: ret }
+        Self { faces: faces }
     }
 
     pub fn faces(&self) -> &[Face] {
@@ -85,13 +64,13 @@ impl World {
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct Face {
     pub position: [i32; 4],
-    pub size: [i32; 2],
+    pub size: [i32; 3],
 }
 
 impl Face {
     const ATTRIBS: [wgpu::VertexAttribute; 2] = wgpu::vertex_attr_array![
         0 => Sint32x4, // position
-        1 => Sint32x2, // size
+        1 => Sint32x3, // size
     ];
 
     pub fn layout() -> wgpu::VertexBufferLayout<'static> {

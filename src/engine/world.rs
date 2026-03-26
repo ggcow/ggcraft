@@ -1,5 +1,7 @@
 use std::collections::HashSet;
 
+use rustc_hash::FxHashMap;
+
 use crate::engine::{atlas, mca::reader::McLoader};
 
 macro_rules! SIZE {
@@ -12,8 +14,49 @@ pub struct World {
     faces: Vec<Face>,
 }
 
+#[derive(Debug, Clone, Copy)]
+enum BlockFaces {
+    AllSame(atlas::Block),
+    Complex {
+        top: atlas::Block,
+        sides: atlas::Block,
+        bottom: atlas::Block,
+        color: [u8; 4],
+    },
+}
+
+impl BlockFaces {
+    fn color(&self) -> u32 {
+        match self {
+            BlockFaces::AllSame(_) => 0xffffffff,
+            BlockFaces::Complex { color, .. } => {
+                let [r, g, b, a] = *color;
+                ((r as u32) << 24) + ((g as u32) << 16) + ((b as u32) << 8) + (a as u32)
+            }
+        }
+    }
+    fn top(&self) -> u32 {
+        match self {
+            BlockFaces::AllSame(x) => *x as u32,
+            BlockFaces::Complex { top, .. } => *top as u32,
+        }
+    }
+    fn side(&self) -> u32 {
+        match self {
+            BlockFaces::AllSame(x) => *x as u32,
+            BlockFaces::Complex { sides, .. } => *sides as u32,
+        }
+    }
+    fn bottom(&self) -> u32 {
+        match self {
+            BlockFaces::AllSame(x) => *x as u32,
+            BlockFaces::Complex { bottom, .. } => *bottom as u32,
+        }
+    }
+}
+
 struct Blocks {
-    blocks: rustc_hash::FxHashMap<(i32, i32), [Option<u32>; 320]>,
+    blocks: rustc_hash::FxHashMap<(i32, i32), [Option<BlockFaces>; 320]>,
 }
 
 impl Blocks {
@@ -23,15 +66,15 @@ impl Blocks {
         }
     }
 
-    fn set(&mut self, x: i32, y: i32, z: i32, block: u32) {
+    fn set(&mut self, x: i32, y: i32, z: i32, block: BlockFaces) {
         let column = self.blocks.entry((x, z)).or_insert_with(|| [None; 320]);
 
         column[y as usize] = Some(block);
     }
-    fn get(&self, x: i32, y: i32, z: i32) -> Option<u32> {
+    fn get(&self, x: i32, y: i32, z: i32) -> Option<BlockFaces> {
         let idx = self.blocks.get(&(x, z))?.get(y as usize)?;
         if let Some(idx) = idx {
-            Some(*idx)
+            Some(idx.clone())
         } else {
             None
         }
@@ -41,7 +84,7 @@ impl Blocks {
 impl World {
     pub fn new() -> Self {
         let mut loader = McLoader::new();
-        let mut textures = HashSet::new();
+        let mut textures = FxHashMap::<String, i32>::default();
 
         let mut blocks = Blocks::new();
 
@@ -58,30 +101,60 @@ impl World {
                         Some(name) => name.to_string(),
                         None => name,
                     };
-                    // let name = name.replace("minecraft:", "");
 
-                    if n == "air" {
+                    if matches!(n.as_str(), "air" | "cave_air" | "void_air") {
                         continue;
                     }
-                    blocks.set(
-                        x,
-                        y,
-                        z,
-                        atlas::Block::from_name(&n).unwrap_or(atlas::Block::DiamondBlock) as u32,
-                    );
+                    let t = match atlas::Block::from_name(&n) {
+                        Some(face) => BlockFaces::AllSame(face),
+
+                        None => match n.as_str() {
+                            "infested_stone" => BlockFaces::AllSame(atlas::Block::Stone),
+                            "snow_block" => BlockFaces::AllSame(atlas::Block::Snow),
+                            "grass_block" => BlockFaces::Complex {
+                                color: [0, 255, 0, 255],
+                                bottom: atlas::Block::Dirt,
+                                top: atlas::Block::GrassBlockTop,
+                                sides: atlas::Block::GrassBlockSide,
+                            },
+                            "mycelium" => BlockFaces::Complex {
+                                color: [255; 4],
+                                top: atlas::Block::MyceliumTop,
+                                sides: atlas::Block::MyceliumSide,
+                                bottom: atlas::Block::Dirt,
+                            },
+                            "dirt_path" => BlockFaces::Complex {
+                                color: [255; 4],
+                                top: atlas::Block::DirtPathTop,
+                                sides: atlas::Block::DirtPathSide,
+                                bottom: atlas::Block::Dirt,
+                            },
+                            "honey_block" => BlockFaces::AllSame(atlas::Block::HoneyBlockSide),
+                            "scaffolding" => BlockFaces::Complex {
+                                color: [255; 4],
+                                bottom: atlas::Block::ScaffoldingBottom,
+                                top: atlas::Block::ScaffoldingTop,
+                                sides: atlas::Block::ScaffoldingSide,
+                            },
+                            _ => {
+                                *textures.entry(n).or_default() += 1;
+                                BlockFaces::AllSame(atlas::Block::Debug)
+                            }
+                        },
+                    };
+                    blocks.set(x, y, z, t);
                     // blocks.insert((x, z), )
                     // blocks[x as usize][y as usize][z as usize] = Some(
                     //     atlas::Block::from_name(&name).unwrap_or(atlas::Block::DiamondBlock) as u32,
                     // );
-                    textures.insert(n);
                 }
             }
             print!("\r{:.02}%", (x as f32 / SIZE!() as f32) * 100.0);
         }
         println!("");
 
-        for texture in textures {
-            println!("Found block: {texture}");
+        for (texture, count) in textures {
+            println!("missing texture x{count}: {texture}");
         }
         let mut faces = Vec::new();
 
@@ -94,44 +167,50 @@ impl World {
 
                     if x == 0 || blocks.get(x - 1, y, z).is_none() {
                         faces.push(Face {
-                            position: [x as i32, y as i32, z as i32, 0],
-                            size: [1, 1, 1],
-                            tex_index,
+                            position: [x, y, z, 0],
+                            size: [1i32; 3],
+                            tex_index: tex_index.side(),
+                            color_multiplier: tex_index.color(),
                         });
                     }
                     if x == SIZE!() - 1 || blocks.get(x + 1, y, z).is_none() {
                         faces.push(Face {
-                            position: [x as i32, y as i32, z as i32, 1],
-                            size: [1, 1, 1],
-                            tex_index,
+                            position: [x, y, z, 1],
+                            size: [1i32; 3],
+                            tex_index: tex_index.side(),
+                            color_multiplier: tex_index.color(),
                         });
                     }
                     if y == 0 || blocks.get(x, y - 1, z).is_none() {
                         faces.push(Face {
-                            position: [x as i32, y as i32, z as i32, 2],
-                            size: [1, 1, 1],
-                            tex_index,
+                            position: [x, y, z, 2],
+                            size: [1i32; 3],
+                            tex_index: tex_index.bottom(),
+                            color_multiplier: tex_index.color(),
                         });
                     }
                     if y == 319 || blocks.get(x, y + 1, z).is_none() {
                         faces.push(Face {
-                            position: [x as i32, y as i32, z as i32, 3],
-                            size: [1, 1, 1],
-                            tex_index,
+                            position: [x, y, z, 3],
+                            size: [1i32; 3],
+                            tex_index: tex_index.top(),
+                            color_multiplier: tex_index.color(),
                         });
                     }
                     if z == 0 || blocks.get(x, y, z - 1).is_none() {
                         faces.push(Face {
-                            position: [x as i32, y as i32, z as i32, 4],
-                            size: [1, 1, 1],
-                            tex_index,
+                            position: [x, y, z, 4],
+                            size: [1i32; 3],
+                            tex_index: tex_index.side(),
+                            color_multiplier: tex_index.color(),
                         });
                     }
                     if z == SIZE!() - 1 || blocks.get(x, y, z + 1).is_none() {
                         faces.push(Face {
-                            position: [x as i32, y as i32, z as i32, 5],
-                            size: [1, 1, 1],
-                            tex_index,
+                            position: [x, y, z, 5],
+                            size: [1i32; 3],
+                            tex_index: tex_index.side(),
+                            color_multiplier: tex_index.color(),
                         });
                     }
                 }
@@ -152,13 +231,15 @@ pub struct Face {
     pub position: [i32; 4],
     pub size: [i32; 3],
     pub tex_index: u32,
+    pub color_multiplier: u32,
 }
 
 impl Face {
-    const ATTRIBS: [wgpu::VertexAttribute; 3] = wgpu::vertex_attr_array![
+    const ATTRIBS: [wgpu::VertexAttribute; 4] = wgpu::vertex_attr_array![
         0 => Sint32x4, // position
         1 => Sint32x3, // size
         2 => Uint32,   // tex_index
+        3 => Uint32,  // rgb color multiplier + 6 bits for which sides are affected (with 2 unused bits just before)
     ];
 
     pub fn layout() -> wgpu::VertexBufferLayout<'static> {

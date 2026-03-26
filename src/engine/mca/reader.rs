@@ -101,7 +101,7 @@ impl McLoader<'_> {
         // println!("{pos:?} {idx} {packed_i64} {shift}");
         let index = indices[packed_i64] >> (shift * bits_per_index);
 
-        let block = &chunklet.palette[(index & (1 << bits_per_index - 1)) as usize];
+        let block = &chunklet.palette[(index & ((1 << bits_per_index) - 1)) as usize];
 
         // println!("palette: {} ({bits_per_index})", chunklet.palette.len());
         // std::fs::write(
@@ -154,7 +154,7 @@ struct ChunksSection<'a> {
 #[derive(Deserialize, Serialize, Debug)]
 struct BlockStates<'a> {
     palette: Vec<BlockPalette<'a>>,
-    data: Option<fastnbt::LongArray>, // None = palete.len() == 1
+    data: Option<fastnbt::LongArray>, // None = palette.len() == 1
 }
 
 #[derive(Deserialize, Serialize, Debug, PartialEq)]

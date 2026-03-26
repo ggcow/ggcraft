@@ -70,7 +70,7 @@ impl McLoader<'_> {
         let cz = pos[2] >> 4;
 
         let chunk = self.get_chunk((cx, cz))?;
-        let chunklet_y = (pos[1] >> 5) as i8;
+        let chunklet_y = (pos[1] >> 4) as i8;
 
         let chunklet = &chunk
             .sections

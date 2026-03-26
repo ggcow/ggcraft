@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use wgpu::util::DeviceExt as _;
+use wgpu::{Limits, util::DeviceExt as _};
 use wgpu_text::{
     BrushBuilder, TextBrush,
     glyph_brush::{Section as TextSection, Text},
@@ -58,7 +58,13 @@ impl State {
             })
             .await?;
         let (device, queue) = adapter
-            .request_device(&wgpu::DeviceDescriptor::default())
+            .request_device(&wgpu::DeviceDescriptor {
+                required_limits: Limits {
+                    max_texture_array_layers: 2048,
+                    ..Default::default()
+                },
+                ..Default::default()
+            })
             .await?;
 
         let surface_caps = surface.get_capabilities(&adapter);

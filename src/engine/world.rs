@@ -1,12 +1,8 @@
-use std::collections::HashSet;
-
-use rustc_hash::FxHashMap;
-
-use crate::engine::{atlas, mca::reader::McLoader};
+use crate::engine::atlas;
 
 macro_rules! SIZE {
     () => {
-        256
+        128
     };
 }
 
@@ -82,9 +78,10 @@ impl Blocks {
 }
 
 impl World {
+    #[cfg(feature = "hermit")]
     pub fn new() -> Self {
-        let mut loader = McLoader::new();
-        let mut textures = FxHashMap::<String, i32>::default();
+        let mut loader = crate::engine::mca::reader::McLoader::new();
+        let mut textures = rustc_hash::FxHashMap::<String, i32>::default();
 
         let mut blocks = Blocks::new();
 
@@ -105,11 +102,11 @@ impl World {
                     if matches!(n.as_str(), "air" | "cave_air" | "void_air") {
                         continue;
                     }
-                    let t = match atlas::Block::from_name(&n) {
+                    let t = match atlas::Block::from_stem(&n) {
                         Some(face) => BlockFaces::AllSame(face),
 
                         None => match n.as_str() {
-                            "infested_stone" => BlockFaces::AllSame(atlas::Block::Stone),
+                            // "infested_stone" => BlockFaces::AllSame(atlas::Block::Stone),
                             // "snow_block" => BlockFaces::AllSame(atlas::Block::Snow),
                             // "grass_block" => BlockFaces::Complex {
                             //     color: [0, 255, 0, 255],
@@ -156,6 +153,30 @@ impl World {
         for (texture, count) in textures {
             println!("missing texture x{count}: {texture}");
         }
+
+        Self::make_faces(&blocks)
+    }
+
+    #[cfg(not(feature = "hermit"))]
+    pub fn new() -> Self {
+        let mut blocks = Blocks::new();
+
+        fn height(x: i32, y: i32) -> i32 {
+            (((x as f32 + y as f32) / 10.).cos() * x as f32 + SIZE!() as f32 + 10.0) as i32
+        }
+
+        for x in -SIZE!()..SIZE!() {
+            for z in -SIZE!()..SIZE!() {
+                for y in 0..height(x, z) {
+                    blocks.set(x, y, z, BlockFaces::AllSame(atlas::Block::Dirt));
+                }
+            }
+        }
+
+        Self::make_faces(&blocks)
+    }
+
+    fn make_faces(blocks: &Blocks) -> Self {
         let mut faces = Vec::new();
 
         for x in -SIZE!()..SIZE!() {
@@ -217,7 +238,7 @@ impl World {
             }
         }
 
-        Self { faces: faces }
+        Self { faces }
     }
 
     pub fn faces(&self) -> &[Face] {

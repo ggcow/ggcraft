@@ -1,4 +1,4 @@
-use anti::run;
+use ggcraft::run;
 
 fn main() {
     run().unwrap();

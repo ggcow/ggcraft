@@ -1,3 +1,5 @@
+use rustc_hash::FxHashSet;
+
 generate_enum::generate_enum_from_files!("Block", "assets/textures/block");
 
 pub struct Atlas {
@@ -6,15 +8,84 @@ pub struct Atlas {
 }
 
 impl Atlas {
-    pub fn new(device: &wgpu::Device, queue: &wgpu::Queue) -> Self {
+    #[cfg(target_arch = "wasm32")]
+    pub async fn get_block_image(block: Block) -> image::DynamicImage {
+        use wasm_bindgen_futures::JsFuture;
+        use web_sys::wasm_bindgen::JsCast as _;
+        use web_sys::Response;
+
+        let url = format!("./assets/textures/block/{}", block.name());
+        let resp_value = JsFuture::from(web_sys::window().unwrap().fetch_with_str(&url))
+            .await
+            .expect("fetch failed");
+        let resp: Response = resp_value.dyn_into().unwrap();
+
+        let buffer = JsFuture::from(resp.array_buffer().unwrap())
+            .await
+            .expect("array_buffer failed");
+        let bytes = js_sys::Uint8Array::new(&buffer).to_vec();
+
+        image::load_from_memory(&bytes).expect("failed to load block image")
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    pub async fn new(device: &wgpu::Device, queue: &wgpu::Queue) -> Self {
         // Charger toutes les textures
-        let mut textures_bytes = vec![];
-        for block in Block::ALL {
-            let img = image::open(block.path()).unwrap().to_rgba8();
+        // let textures_bytes = Block::ALL
+        //     .iter()
+        //     .copied()
+        //     .map(Self::get_block_image) // fn(Block) -> DynamicImage
+        //     .map(image::DynamicImage::into_rgba8) // fn(DynamicImage) -> RgbaImage
+        //     .collect::<Vec<_>>();
+
+        let mut sizes = FxHashSet::with_hasher(rustc_hash::FxBuildHasher::default());
+
+        let mut textures_bytes = Vec::new();
+        use futures::future::join_all;
+        for img in join_all(Block::ALL.iter().copied().map(Self::get_block_image))
+            .await
+            .into_iter()
+            .map(image::DynamicImage::into_rgba8)
+        {
+            sizes.insert(img.dimensions());
             textures_bytes.push(img);
         }
+        for (width, height) in &sizes {
+            log::info!("Texture size: {width}x{height}");
+        }
+        let tile_size = sizes.iter().max_by_key(|(w, _h)| w).unwrap().0;
 
-        let tile_size = textures_bytes[0].width();
+        Self::create_texture(device, queue, tile_size, textures_bytes)
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn new(device: &wgpu::Device, queue: &wgpu::Queue) -> Self {
+        let mut sizes = FxHashSet::with_hasher(rustc_hash::FxBuildHasher::default());
+
+        let mut textures_bytes = Vec::new();
+        for img in Block::ALL
+            .iter()
+            .copied()
+            .map(|block| image::open(block.path()).unwrap())
+            .map(image::DynamicImage::into_rgba8)
+        {
+            sizes.insert(img.dimensions());
+            textures_bytes.push(img);
+        }
+        for (width, height) in &sizes {
+            log::info!("Texture size: {width}x{height}");
+        }
+        let tile_size = sizes.iter().max_by_key(|(w, _h)| w).unwrap().0;
+
+        Self::create_texture(device, queue, tile_size, textures_bytes)
+    }
+
+    fn create_texture(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        tile_size: u32,
+        textures_bytes: Vec<image::RgbaImage>,
+    ) -> Self {
         let layer_count = Block::ALL.len() as u32;
 
         let size = wgpu::Extent3d {

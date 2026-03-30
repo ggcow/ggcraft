@@ -1,9 +1,9 @@
-use std::sync::{
-    Arc, Mutex,
-    atomic::{AtomicBool, Ordering},
-};
-
 use notify::{Config, Event, RecommendedWatcher, RecursiveMode, Result, Watcher as _};
+use std::iter::FromIterator;
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc, Mutex,
+};
 
 pub struct Watcher {
     dirty: Arc<AtomicBool>,

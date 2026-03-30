@@ -1,59 +1,86 @@
 use std::sync::Arc;
 
-use winit::{
-    application::ApplicationHandler,
-    event::{KeyEvent, WindowEvent},
-    event_loop::ActiveEventLoop,
-    keyboard::PhysicalKey,
-    window::{CursorGrabMode, Window},
-};
-
 use super::state::State;
 use crate::engine::App;
 
+use winit::{
+    application::ApplicationHandler, event::*, event_loop::ActiveEventLoop, keyboard::PhysicalKey,
+    window::Window,
+};
+
+#[cfg(target_arch = "wasm32")]
+use wasm_bindgen::prelude::*;
+#[cfg(target_arch = "wasm32")]
+use winit::event_loop::EventLoop;
+
 impl App {
-    pub fn new() -> Self {
+    pub fn new(#[cfg(target_arch = "wasm32")] event_loop: &EventLoop<State>) -> Self {
+        #[cfg(target_arch = "wasm32")]
+        let proxy = Some(event_loop.create_proxy());
         Self {
             state: None,
-            last_time: std::time::Instant::now(),
+            #[cfg(target_arch = "wasm32")]
+            proxy,
+            last_update: instant::Instant::now(),
         }
     }
 }
 
 impl ApplicationHandler<State> for App {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-        let window = Arc::new(
-            event_loop
-                .create_window(Window::default_attributes())
-                .unwrap(),
-        );
-        window.set_cursor_visible(false);
-        window.set_cursor_grab(CursorGrabMode::Confined).unwrap();
-        self.state = Some(pollster::block_on(State::new(window)).unwrap());
+        #[allow(unused_mut)]
+        let mut window_attributes = Window::default_attributes();
+
+        #[cfg(target_arch = "wasm32")]
+        {
+            use wasm_bindgen::JsCast;
+            use winit::platform::web::WindowAttributesExtWebSys;
+
+            const CANVAS_ID: &str = "canvas";
+
+            let window = wgpu::web_sys::window().unwrap_throw();
+            let document = window.document().unwrap_throw();
+            let canvas = document.get_element_by_id(CANVAS_ID).unwrap_throw();
+            let html_canvas_element = canvas.unchecked_into();
+            window_attributes = window_attributes.with_canvas(Some(html_canvas_element));
+        }
+
+        let window = Arc::new(event_loop.create_window(window_attributes).unwrap());
+
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            // If we are not on web we can use pollster to
+            // await the
+            self.state = Some(pollster::block_on(State::new(window)).unwrap());
+        }
+
+        #[cfg(target_arch = "wasm32")]
+        {
+            if let Some(proxy) = self.proxy.take() {
+                wasm_bindgen_futures::spawn_local(async move {
+                    assert!(proxy
+                        .send_event(
+                            State::new(window)
+                                .await
+                                .expect("Unable to create canvas!!!")
+                        )
+                        .is_ok())
+                });
+            }
+        }
     }
 
     #[allow(unused_mut)]
     fn user_event(&mut self, _event_loop: &ActiveEventLoop, mut event: State) {
-        // This is where proxy.send_event() ends up
-        self.state = Some(event);
-    }
-
-    fn device_event(
-        &mut self,
-        _event_loop: &ActiveEventLoop,
-        _device_id: winit::event::DeviceId,
-        event: winit::event::DeviceEvent,
-    ) {
-        let state = match &mut self.state {
-            Some(canvas) => canvas,
-            None => return,
-        };
-        match event {
-            winit::event::DeviceEvent::MouseMotion { delta } => {
-                state.handle_mouse_move(delta.0 as f32, delta.1 as f32)
-            }
-            _ => {}
+        #[cfg(target_arch = "wasm32")]
+        {
+            event.window.request_redraw();
+            event.resize(
+                event.window.inner_size().width,
+                event.window.inner_size().height,
+            );
         }
+        self.state = Some(event);
     }
 
     fn window_event(
@@ -71,18 +98,15 @@ impl ApplicationHandler<State> for App {
             WindowEvent::CloseRequested => event_loop.exit(),
             WindowEvent::Resized(size) => state.resize(size.width, size.height),
             WindowEvent::RedrawRequested => {
-                let dt = self.last_time.elapsed();
-                self.last_time = std::time::Instant::now();
-
+                let dt = self.last_update.elapsed();
+                self.last_update += dt;
                 state.update(dt);
                 match state.render() {
                     Ok(_) => {}
-                    Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
-                        let size = state.window.inner_size();
-                        state.resize(size.width, size.height);
-                    }
                     Err(e) => {
-                        log::error!("Unable to render {e}");
+                        // Log the error and exit gracefully
+                        log::error!("{e}");
+                        event_loop.exit();
                     }
                 }
             }
@@ -94,12 +118,30 @@ impl ApplicationHandler<State> for App {
                         ..
                     },
                 ..
-            } => state.handle_key(event_loop, code, key_state.is_pressed()),
+            } => state.handle_key(event_loop, code, key_state),
             WindowEvent::MouseInput {
                 device_id: _,
                 state: button_state,
                 button,
-            } => state.handle_mouse_buttons(button, button_state.is_pressed()),
+            } => state.handle_mouse_buttons(button, button_state),
+            _ => {}
+        }
+    }
+
+    fn device_event(
+        &mut self,
+        _event_loop: &ActiveEventLoop,
+        _device_id: winit::event::DeviceId,
+        event: winit::event::DeviceEvent,
+    ) {
+        let state = match &mut self.state {
+            Some(canvas) => canvas,
+            None => return,
+        };
+        match event {
+            winit::event::DeviceEvent::MouseMotion { delta } => {
+                state.handle_mouse_move(delta.0 as f32, delta.1 as f32)
+            }
             _ => {}
         }
     }

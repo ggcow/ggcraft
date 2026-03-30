@@ -1,51 +1,67 @@
-use std::sync::Arc;
-use wgpu::{Limits, util::DeviceExt as _};
+use instant::Instant;
+use std::{iter, sync::Arc};
+use wgpu::util::DeviceExt;
 use wgpu_text::{
-    BrushBuilder, TextBrush,
     glyph_brush::{Section as TextSection, Text},
+    BrushBuilder, TextBrush,
 };
-use winit::{event_loop::ActiveEventLoop, keyboard::KeyCode, window::Window};
+use winit::{
+    event::{ElementState, MouseButton},
+    event_loop::ActiveEventLoop,
+    keyboard::KeyCode,
+    window::Window,
+};
 
 use crate::engine::{
-    atlas,
+    atlas::Atlas,
     cam::{Camera, CameraController},
-    pipe, texture, watcher, world,
+    pipe::Pipeline,
+    texture::Texture,
+    world::{Face, World},
 };
+#[cfg(feature = "hot-reload")]
+use crate::{engine::watcher::Watcher, SHADER_PATH};
 
 pub struct State {
     surface: wgpu::Surface<'static>,
     device: wgpu::Device,
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
-    is_surface_configured: bool,
-    pub window: Arc<Window>,
-    pipeline: pipe::Pipeline,
-    atlas: atlas::Atlas,
-    camera: Camera,
+    depth_texture: Texture,
+    instance_buffer: wgpu::Buffer,
     camera_buffer: wgpu::Buffer,
     camera_bind_group: wgpu::BindGroup,
+    camera: Camera,
     camera_controller: CameraController,
-    instance_buffer: wgpu::Buffer,
-    world: world::World,
-    depth_texture: texture::Texture,
-    watcher: watcher::Watcher,
-    msaa_texture: texture::Texture,
-    brush: TextBrush<wgpu_text::glyph_brush::ab_glyph::FontRef<'static>>,
-    counting_renders_since: std::time::Instant,
+    pipeline: Pipeline,
+    world: World,
+    atlas: Atlas,
+    counting_renders_since: Instant,
     renders_fps: u64,
+    is_surface_configured: bool,
+    pub window: Arc<Window>,
+    brush: TextBrush<wgpu_text::glyph_brush::ab_glyph::FontRef<'static>>,
     debug_text: String,
+
+    #[cfg(feature = "msaa")]
+    msaa_texture: Texture,
+
+    #[cfg(feature = "hot-reload")]
+    watcher: Watcher,
 }
 
 impl State {
-    // We don't need this to be async right now,
     pub async fn new(window: Arc<Window>) -> anyhow::Result<State> {
         let size = window.inner_size();
 
         // The instance is a handle to our GPU
         // BackendBit::PRIMARY => Vulkan + Metal + DX12 + Browser WebGPU
-        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
-            backends: wgpu::Backends::PRIMARY,
-            ..Default::default()
+        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+            backends: wgpu::Backends::all(),
+            flags: Default::default(),
+            memory_budget_thresholds: Default::default(),
+            backend_options: Default::default(),
+            display: None,
         });
 
         let surface = instance.create_surface(window.clone()).unwrap();
@@ -57,45 +73,66 @@ impl State {
                 force_fallback_adapter: false,
             })
             .await?;
+
+        let info = adapter.get_info();
+        let friendly_name = if !info.name.is_empty() {
+            info.name.clone()
+        } else {
+            format!("{:?} via {:?}", info.device_type, info.backend)
+        };
+        log::info!("Using adapter: {friendly_name}");
+
         let (device, queue) = adapter
             .request_device(&wgpu::DeviceDescriptor {
-                required_limits: Limits {
-                    max_texture_array_layers: 2048,
-                    ..Default::default()
-                },
-                ..Default::default()
+                label: None,
+                required_features: wgpu::Features::empty(),
+                experimental_features: wgpu::ExperimentalFeatures::disabled(),
+                #[cfg(target_arch = "wasm32")]
+                required_limits: wgpu::Limits::downlevel_webgl2_defaults()
+                    .using_resolution(adapter.limits()),
+                #[cfg(not(target_arch = "wasm32"))]
+                required_limits: wgpu::Limits::default(),
+                memory_hints: Default::default(),
+                trace: wgpu::Trace::Off,
             })
             .await?;
 
         let surface_caps = surface.get_capabilities(&adapter);
-        // Shader code in this tutorial assumes an sRGB surface texture. Using a different
-        // one will result in all the colors coming out darker. If you want to support non
-        // sRGB surfaces, you'll need to account for that when drawing to the frame.
+
+        // Shader code in this tutorial assumes an Srgb surface texture. Using a different
+        // one will result all the colors comming out darker. If you want to support non
+        // Srgb surfaces, you'll need to account for that when drawing to the frame.
         let surface_format = surface_caps
             .formats
             .iter()
-            .find(|f| f.is_srgb())
             .copied()
+            .find(|f| f.is_srgb())
             .unwrap_or(surface_caps.formats[0]);
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             format: surface_format,
             width: size.width,
             height: size.height,
-            present_mode: surface_caps.present_modes[0],
+            present_mode: if surface_caps
+                .present_modes
+                .contains(&wgpu::PresentMode::Fifo)
+            {
+                // VSync
+                wgpu::PresentMode::Fifo
+            } else {
+                surface_caps.present_modes[0]
+            },
             alpha_mode: surface_caps.alpha_modes[0],
-            view_formats: vec![],
             desired_maximum_frame_latency: 2,
+            view_formats: vec![],
         };
 
-        let depth_texture =
-            texture::Texture::create_depth_texture(&device, &config, "depth_texture");
+        let depth_texture = Texture::create_depth_texture(&device, &config, "depth_texture");
 
-        let msaa_texture = texture::Texture::create_msaa_texture(&device, &config, "msaa_texture");
+        #[cfg(feature = "msaa")]
+        let msaa_texture = Texture::create_msaa_texture(&device, &config, "msaa_texture");
 
-        let world = world::World::new();
-
-        let watcher_handle = watcher::Watcher::new(&["src/shaders/block.wgsl"]).unwrap();
+        let world = World::new();
 
         let camera = Camera::new(config.width, config.height);
 
@@ -136,26 +173,32 @@ impl State {
             usage: wgpu::BufferUsages::VERTEX,
         });
 
-        let atlas = atlas::Atlas::new(&device, &queue);
-        let texture_bind_group_layout = &atlas.bind_group_layout;
-        let diffuse_bind_group = &atlas.bind_group;
+        #[cfg(target_arch = "wasm32")]
+        let atlas = Atlas::new(&device, &queue).await;
+        #[cfg(not(target_arch = "wasm32"))]
+        let atlas = Atlas::new(&device, &queue);
 
         let render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Render Pipeline Layout"),
-                bind_group_layouts: &[&texture_bind_group_layout, &camera_bind_group_layout],
+                bind_group_layouts: &[
+                    Some(&atlas.bind_group_layout),
+                    Some(&camera_bind_group_layout),
+                ],
                 immediate_size: 0,
             });
 
-        let pipeline = pipe::Pipeline::new(
+        let pipeline = Pipeline::new(
             &device,
-            "src/shaders/block.wgsl",
             "Render Pipeline",
             render_pipeline_layout.clone(),
-            world::Face::layout(),
+            Face::layout(),
             config.format,
-            Some(texture::Texture::DEPTH_FORMAT),
+            Some(Texture::DEPTH_FORMAT),
         );
+
+        #[cfg(feature = "hot-reload")]
+        let watcher = Watcher::new(&[SHADER_PATH!()]).unwrap();
 
         let brush =
             BrushBuilder::using_font_bytes(include_bytes!("../../assets/fonts/TTT-Regular.otf"))
@@ -168,85 +211,70 @@ impl State {
             device,
             queue,
             config,
-            is_surface_configured: false,
-            window,
-            pipeline,
-            atlas,
+            depth_texture,
             camera,
-            camera_buffer,
             camera_bind_group,
+            camera_buffer,
             camera_controller,
             instance_buffer,
+            pipeline,
             world,
-            depth_texture,
-            watcher: watcher_handle,
-            msaa_texture,
+            atlas,
+            is_surface_configured: false,
+            window,
+            renders_fps: 0,
+            counting_renders_since: instant::Instant::now(),
             brush,
             debug_text: String::new(),
-            counting_renders_since: std::time::Instant::now(),
-            renders_fps: 0,
+            #[cfg(feature = "msaa")]
+            msaa_texture,
+            #[cfg(feature = "hot-reload")]
+            watcher,
         })
     }
 
     pub fn resize(&mut self, width: u32, height: u32) {
         if width > 0 && height > 0 {
+            let max_size = self.device.limits().max_texture_dimension_2d;
+
+            self.config.width = width.min(max_size);
+            self.config.height = height.min(max_size);
+
+            self.camera.resize(width, height);
             self.brush
                 .resize_view(width as f32, height as f32, &self.queue);
-            self.config.width = width;
-            self.config.height = height;
-            self.surface.configure(&self.device, &self.config);
-            self.is_surface_configured = true;
-            // Update camera aspect ratio
-            self.camera.aspect = self.config.width as f32 / self.config.height as f32;
-            self.depth_texture =
-                texture::Texture::create_depth_texture(&self.device, &self.config, "depth_texture");
-            self.msaa_texture =
-                texture::Texture::create_msaa_texture(&self.device, &self.config, "msaa_texture");
 
+            self.surface.configure(&self.device, &self.config);
+
+            self.depth_texture =
+                Texture::create_depth_texture(&self.device, &self.config, "depth_texture");
+
+            #[cfg(feature = "msaa")]
+            {
+                self.msaa_texture =
+                    Texture::create_msaa_texture(&self.device, &self.config, "msaa_texture");
+            }
+
+            self.is_surface_configured = true;
             self.window.request_redraw();
         }
     }
 
-    pub fn handle_key(&mut self, event_loop: &ActiveEventLoop, code: KeyCode, is_pressed: bool) {
-        match (code, is_pressed) {
-            (KeyCode::Escape, true) => event_loop.exit(),
-            (KeyCode::KeyF, true) => {
-                if self.window.fullscreen().is_some() {
-                    self.window.set_fullscreen(None);
-                } else {
-                    self.window
-                        .set_fullscreen(Some(winit::window::Fullscreen::Borderless(None)));
-                }
-            }
-            _ => self.camera_controller.handle_key(code, is_pressed),
-        }
-    }
-
-    pub fn handle_mouse_buttons(&mut self, button: winit::event::MouseButton, is_pressed: bool) {
-        match (button, is_pressed) {
-            (winit::event::MouseButton::Left, true) => {}
-            (winit::event::MouseButton::Left, false) => {}
-            _ => {}
-        }
-    }
-
-    pub fn handle_mouse_move(&mut self, dx: f32, dy: f32) {
-        self.camera_controller.handle_mouse_move(dx, dy);
-    }
-
-    pub fn update(&mut self, dt: std::time::Duration) {
+    pub fn update(&mut self, dt: instant::Duration) {
         self.renders_fps += 1;
         if self.counting_renders_since.elapsed().as_secs() >= 1 {
             self.debug_text = format!("FPS: {}\npos: {:?}", self.renders_fps, self.camera.eye);
             self.renders_fps = 0;
-            self.counting_renders_since += std::time::Duration::from_secs(1);
+            self.counting_renders_since = instant::Instant::now();
         }
+        #[cfg(feature = "hot-reload")]
         if self.watcher.is_dirty() {
             log::info!("Reloading shaders...");
             self.pipeline.reload_shader(&self.device);
             self.watcher.take_modified_files();
         }
         self.camera_controller.update_camera(&mut self.camera, dt);
+
         self.queue.write_buffer(
             &self.camera_buffer,
             0,
@@ -254,15 +282,37 @@ impl State {
         );
     }
 
-    pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
+    pub fn render(&mut self) -> anyhow::Result<()> {
         self.window.request_redraw();
+
         // We can't render unless the surface is configured
         if !self.is_surface_configured {
             return Ok(());
         }
 
-        let output = self.surface.get_current_texture()?;
-        let output_view = output
+        let output = match self.surface.get_current_texture() {
+            wgpu::CurrentSurfaceTexture::Success(surface_texture) => surface_texture,
+            wgpu::CurrentSurfaceTexture::Suboptimal(surface_texture) => {
+                self.surface.configure(&self.device, &self.config);
+                surface_texture
+            }
+            wgpu::CurrentSurfaceTexture::Timeout
+            | wgpu::CurrentSurfaceTexture::Occluded
+            | wgpu::CurrentSurfaceTexture::Validation => {
+                // Skip this frame
+                return Ok(());
+            }
+            wgpu::CurrentSurfaceTexture::Outdated => {
+                self.surface.configure(&self.device, &self.config);
+                return Ok(());
+            }
+            wgpu::CurrentSurfaceTexture::Lost => {
+                // You could recreate the devices and all resources
+                // created with it here, but we'll just bail
+                anyhow::bail!("Lost device");
+            }
+        };
+        let view = output
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
 
@@ -275,18 +325,21 @@ impl State {
         {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Render Pass"),
-                color_attachments: &[
-                    // This is what @location(0) in the fragment shader targets
-                    Some(wgpu::RenderPassColorAttachment {
-                        view: &self.msaa_texture.view,
-                        resolve_target: Some(&output_view),
-                        ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-                            store: wgpu::StoreOp::Store,
-                        },
-                        depth_slice: None,
-                    }),
-                ],
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    #[cfg(feature = "msaa")]
+                    view: &self.msaa_texture.view,
+                    #[cfg(not(feature = "msaa"))]
+                    view: &view,
+                    #[cfg(feature = "msaa")]
+                    resolve_target: Some(&view),
+                    #[cfg(not(feature = "msaa"))]
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                        store: wgpu::StoreOp::Store,
+                    },
+                    depth_slice: None,
+                })],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                     view: &self.depth_texture.view,
                     depth_ops: Some(wgpu::Operations {
@@ -309,7 +362,7 @@ impl State {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Render Pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &output_view,
+                    view: &view,
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Load,
@@ -334,10 +387,51 @@ impl State {
             self.brush.draw(&mut render_pass);
         }
 
-        // submit will accept anything that implements IntoIter
-        self.queue.submit(std::iter::once(encoder.finish()));
+        self.queue.submit(iter::once(encoder.finish()));
         output.present();
 
         Ok(())
+    }
+
+    pub fn handle_mouse_move(&mut self, dx: f32, dy: f32) {
+        self.camera_controller.handle_mouse_move(dx, dy);
+    }
+
+    pub fn handle_key(&mut self, event_loop: &ActiveEventLoop, code: KeyCode, state: ElementState) {
+        match (code, state == ElementState::Pressed) {
+            (KeyCode::Escape, true) => event_loop.exit(),
+            (KeyCode::KeyF, true) => {
+                if self.window.fullscreen().is_some() {
+                    self.window.set_fullscreen(None);
+                } else {
+                    self.window
+                        .set_fullscreen(Some(winit::window::Fullscreen::Borderless(None)));
+                }
+            }
+            _ => self.camera_controller.handle_key(code, state),
+        }
+    }
+
+    #[allow(unused)]
+    pub fn handle_mouse_buttons(&mut self, button: winit::event::MouseButton, state: ElementState) {
+        match (button, state == ElementState::Pressed) {
+            (MouseButton::Left, true) => {
+                let _ = self
+                    .window
+                    .set_cursor_grab(winit::window::CursorGrabMode::Locked)
+                    .or_else(|_| {
+                        self.window
+                            .set_cursor_grab(winit::window::CursorGrabMode::Confined)
+                    });
+
+                self.window.set_cursor_visible(false);
+            }
+            (MouseButton::Right, true) => {
+                self.window.set_cursor_visible(true);
+                self.window
+                    .set_cursor_grab(winit::window::CursorGrabMode::None);
+            }
+            _ => {}
+        }
     }
 }

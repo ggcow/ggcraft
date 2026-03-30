@@ -43,12 +43,14 @@ pub fn generate_enum_from_files(input: TokenStream) -> TokenStream {
     let mut variants = vec![];
     let mut file_paths = vec![];
     let mut file_stems = vec![];
+    let mut file_names = vec![];
 
     let abs_folder = std::fs::canonicalize(&folder_path).expect("dossier invalide");
 
     if let Ok(entries) = fs::read_dir(&abs_folder) {
         for entry in entries.flatten() {
             if let Some(file_name) = entry.file_name().to_str() {
+                file_names.push(file_name.to_string());
                 let stem = file_name.split('.').next().unwrap();
 
                 let variant_name = to_camel_case(stem);
@@ -90,10 +92,16 @@ pub fn generate_enum_from_files(input: TokenStream) -> TokenStream {
                 }
             }
 
-            pub fn from_name(name: &str) -> Option<Self> {
-                match name {
+            pub fn from_stem(stem: &str) -> Option<Self> {
+                match stem {
                     #( #file_stems => Some(#enum_name::#variants), )*
                     _ => None,
+                }
+            }
+
+            pub fn name(&self) -> &'static str {
+                match self {
+                    #( #enum_name::#variants => #file_names ),*
                 }
             }
         }

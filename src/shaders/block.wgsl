@@ -1,4 +1,3 @@
-// Vertex shader
 @group(1) @binding(0)
 var<uniform> mvp: mat4x4<f32>;
 
@@ -46,8 +45,8 @@ fn vs_main(in: VertexInput) -> VertexOutput {
     let position = vec3<f32>(in.cube_position.xyz) + scaled;
     let tex_coords = M2[index / 2] * scaled;
     out.tex_coords = vec2<f32>(tex_coords.x, 1.0 - tex_coords.y);
-    if (index <=1){
-        out.tex_coords = 1-out.tex_coords.yx;
+    if index <= 1 {
+        out.tex_coords = 1 - out.tex_coords.yx;
     }
 
     out.normal = normals[index];
@@ -68,13 +67,12 @@ struct VertexOutput {
     @location(4) tex_index: u32,
     @location(5) color: u32,
 }
- 
-// Fragment shader
+
 @group(0) @binding(0)
 var tex: texture_2d_array<f32>;
 @group(0) @binding(1)
 var samp: sampler;
-
+ 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let light_position: vec3<f32> = vec3<f32>(100.0, 100.0, 100.0);
@@ -89,15 +87,13 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let diffuse: vec3<f32> = (ambient + diff * light_color) + (specular_strength * spec * light_color);
 
     let block_color = vec4f(vec4(
-        (in.color>>24)&255,
-        (in.color>>16)&255,
-        (in.color>>8)&255,
-        (in.color>>0)&255,
+        (in.color >> 24) & 255,
+        (in.color >> 16) & 255,
+        (in.color >> 8) & 255,
+        (in.color >> 0) & 255,
     )) / 255;
     let texture_color: vec4<f32> = textureSample(tex, samp, in.tex_coords, in.tex_index);
-    let final_color: vec4<f32> = texture_color * vec4(diffuse, 1) * block_color;
-    // return vec4<f32>(vec3<f32>((f32(in.square_index) + 0.1) / 6.0), 1);
-    return final_color;
+    return texture_color * vec4(diffuse, 1) * block_color;
 }
  
  

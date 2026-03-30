@@ -110,32 +110,32 @@ impl World {
 
                         None => match n.as_str() {
                             "infested_stone" => BlockFaces::AllSame(atlas::Block::Stone),
-                            "snow_block" => BlockFaces::AllSame(atlas::Block::Snow),
-                            "grass_block" => BlockFaces::Complex {
-                                color: [0, 255, 0, 255],
-                                bottom: atlas::Block::Dirt,
-                                top: atlas::Block::GrassBlockTop,
-                                sides: atlas::Block::GrassBlockSide,
-                            },
-                            "mycelium" => BlockFaces::Complex {
-                                color: [255; 4],
-                                top: atlas::Block::MyceliumTop,
-                                sides: atlas::Block::MyceliumSide,
-                                bottom: atlas::Block::Dirt,
-                            },
-                            "dirt_path" => BlockFaces::Complex {
-                                color: [255; 4],
-                                top: atlas::Block::DirtPathTop,
-                                sides: atlas::Block::DirtPathSide,
-                                bottom: atlas::Block::Dirt,
-                            },
-                            "honey_block" => BlockFaces::AllSame(atlas::Block::HoneyBlockSide),
-                            "scaffolding" => BlockFaces::Complex {
-                                color: [255; 4],
-                                bottom: atlas::Block::ScaffoldingBottom,
-                                top: atlas::Block::ScaffoldingTop,
-                                sides: atlas::Block::ScaffoldingSide,
-                            },
+                            // "snow_block" => BlockFaces::AllSame(atlas::Block::Snow),
+                            // "grass_block" => BlockFaces::Complex {
+                            //     color: [0, 255, 0, 255],
+                            //     bottom: atlas::Block::Dirt,
+                            //     top: atlas::Block::GrassBlockTop,
+                            //     sides: atlas::Block::GrassBlockSide,
+                            // },
+                            // "mycelium" => BlockFaces::Complex {
+                            //     color: [255; 4],
+                            //     top: atlas::Block::MyceliumTop,
+                            //     sides: atlas::Block::MyceliumSide,
+                            //     bottom: atlas::Block::Dirt,
+                            // },
+                            // "dirt_path" => BlockFaces::Complex {
+                            //     color: [255; 4],
+                            //     top: atlas::Block::DirtPathTop,
+                            //     sides: atlas::Block::DirtPathSide,
+                            //     bottom: atlas::Block::Dirt,
+                            // },
+                            // "honey_block" => BlockFaces::AllSame(atlas::Block::HoneyBlockSide),
+                            // "scaffolding" => BlockFaces::Complex {
+                            //     color: [255; 4],
+                            //     bottom: atlas::Block::ScaffoldingBottom,
+                            //     top: atlas::Block::ScaffoldingTop,
+                            //     sides: atlas::Block::ScaffoldingSide,
+                            // },
                             _ => {
                                 *textures.entry(n).or_default() += 1;
                                 BlockFaces::AllSame(atlas::Block::Debug)

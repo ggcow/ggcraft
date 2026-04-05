@@ -1,5 +1,22 @@
+use bytemuck::{Pod, Zeroable};
 use wgpu::util::DeviceExt;
 use wgpu::*;
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug, Pod, Zeroable)]
+pub struct ScreenSize(pub u32, pub u32);
+
+impl UniformData for ScreenSize {}
+pub type ScreenUniform = Uniform<ScreenSize>;
+
+pub trait UniformData: Pod + Copy {
+    fn create_uniform(&self, device: &Device, binding: u32, label: Option<&str>) -> Uniform<Self>
+    where
+        Self: Sized,
+    {
+        Uniform::new(device, binding, self, label)
+    }
+}
 
 pub struct Uniform<T: bytemuck::Pod> {
     pub buffer: Buffer,
@@ -47,7 +64,7 @@ impl<T: bytemuck::Pod> Uniform<T> {
         }
     }
 
-    pub fn write(&self, queue: &wgpu::Queue, data: &T) {
+    pub fn update(&self, queue: &wgpu::Queue, data: &T) {
         queue.write_buffer(&self.buffer, 0, bytemuck::bytes_of(data));
     }
 }

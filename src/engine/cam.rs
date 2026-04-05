@@ -1,5 +1,7 @@
 use std::f32::consts::TAU;
 
+use crate::engine::uniform::{Uniform, UniformData};
+use bytemuck::{Pod, Zeroable};
 use derive_more::From;
 use nalgebra::{Matrix4, Point3, Vector3, point, vector};
 use winit::{
@@ -8,20 +10,14 @@ use winit::{
     keyboard::KeyCode,
 };
 
-use crate::engine::uniform::Uniform;
-
 const SAFE_FRAC_PI_2: f32 = std::f32::consts::FRAC_PI_2 - 0.01;
 
 #[repr(C)]
-#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable, From)]
+#[derive(Copy, Clone, Debug, Pod, Zeroable, From)]
 pub struct MVP([[f32; 4]; 4]);
-pub type CameraUniform = Uniform<MVP>;
 
-impl CameraUniform {
-    pub fn update(&self, queue: &wgpu::Queue, camera: &Camera) {
-        self.write(queue, &camera.into());
-    }
-}
+pub type CameraUniform = Uniform<MVP>;
+impl UniformData for MVP {}
 
 impl From<&Camera> for MVP {
     fn from(camera: &Camera) -> Self {
@@ -49,6 +45,10 @@ impl Camera {
             up: vector![0., 1., 0.],
             projection: Projection::new(width, height, 45_f32.to_radians(), znear, zfar),
         }
+    }
+
+    pub fn create_uniform(&self, device: &wgpu::Device, binding: u32) -> CameraUniform {
+        MVP::from(self).create_uniform(device, binding, Some("camera_uniform"))
     }
 
     pub fn resize(&mut self, width: u32, height: u32) {

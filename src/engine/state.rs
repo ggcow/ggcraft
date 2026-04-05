@@ -1,6 +1,20 @@
+#[cfg(feature = "hot-reload")]
+use crate::engine::watcher::Watcher;
+use crate::{
+    engine::{
+        atlas::Atlas,
+        cam::{Camera, CameraController, CameraUniform},
+        cross::Cross,
+        pipe::{FragmentStateTemplate, Pipeline, RenderPipelineTemplate, VertexStateTemplate},
+        texture::Texture,
+        uniform::{ScreenSize, ScreenUniform, UniformData},
+        world::{Face, World},
+    },
+    shader_config, shader_path,
+};
 use instant::Instant;
 use std::{iter, sync::Arc};
-use wgpu::util::DeviceExt;
+use wgpu::{CompositeAlphaMode, util::DeviceExt};
 use wgpu_text::{
     BrushBuilder, TextBrush,
     glyph_brush::{Section as TextSection, Text},
@@ -10,23 +24,6 @@ use winit::{
     event_loop::ActiveEventLoop,
     keyboard::KeyCode,
     window::Window,
-};
-
-#[cfg(feature = "hot-reload")]
-use crate::engine::watcher::Watcher;
-use crate::{
-    engine::{
-        atlas::Atlas,
-        cam::{Camera, CameraController},
-        pipe::{FragmentStateTemplate, Pipeline, RenderPipelineTemplate, VertexStateTemplate},
-        texture::Texture,
-        world::{Face, World},
-    },
-    shader_config,
-};
-use crate::{
-    engine::{cam::CameraUniform, cross::Cross},
-    shader_path,
 };
 
 pub struct State {
@@ -39,8 +36,9 @@ pub struct State {
     camera: Camera,
     camera_controller: CameraController,
     camera_uniform: CameraUniform,
+    screen_uniform: ScreenUniform,
     pipeline: Pipeline,
-    // cross: Cross,
+    cross: Cross,
     world: World,
     atlas: Atlas,
     counting_renders_since: Instant,
@@ -118,21 +116,36 @@ impl State {
             .copied()
             .find(|f| f.is_srgb())
             .unwrap_or(surface_caps.formats[0]);
+
+        let alpha_mode = if surface_caps
+            .alpha_modes
+            .contains(&CompositeAlphaMode::PreMultiplied)
+        {
+            CompositeAlphaMode::PreMultiplied
+        } else if surface_caps
+            .alpha_modes
+            .contains(&CompositeAlphaMode::PostMultiplied)
+        {
+            CompositeAlphaMode::PostMultiplied
+        } else {
+            CompositeAlphaMode::Opaque
+        };
+        let present_mode = if surface_caps
+            .present_modes
+            .contains(&wgpu::PresentMode::Fifo)
+        {
+            // VSync
+            wgpu::PresentMode::Fifo
+        } else {
+            surface_caps.present_modes[0]
+        };
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             format: surface_format,
             width: size.width,
             height: size.height,
-            present_mode: if surface_caps
-                .present_modes
-                .contains(&wgpu::PresentMode::Fifo)
-            {
-                // VSync
-                wgpu::PresentMode::Fifo
-            } else {
-                surface_caps.present_modes[0]
-            },
-            alpha_mode: surface_caps.alpha_modes[0],
+            present_mode,
+            alpha_mode,
             desired_maximum_frame_latency: 2,
             view_formats: vec![],
         };
@@ -141,9 +154,7 @@ impl State {
 
         let camera = Camera::new(config.width, config.height);
         let camera_controller = CameraController::new();
-        let camera_uniform =
-            CameraUniform::new(&device, 0, &(&camera).into(), Some("camera_uniform"));
-
+        let camera_uniform = camera.create_uniform(&device, 0);
         let world = World::new();
         let instance_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Instance Buffer"),
@@ -157,7 +168,8 @@ impl State {
         let atlas = Atlas::new(&device, &queue);
 
         #[cfg(feature = "hot-reload")]
-        let watcher = Watcher::new(&[shader_path!("block.wgsl")]).unwrap();
+        let watcher =
+            Watcher::new(&[shader_path!("block.wgsl"), shader_path!("cross.wgsl")]).unwrap();
 
         let render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -214,7 +226,13 @@ impl State {
             shader_config!("block.wgsl"),
         );
 
-        // let cross = Cross::new(&device, &config, 20.0)?;
+        let screen_uniform = ScreenSize(config.width, config.height).create_uniform(
+            &device,
+            0,
+            Some("screen_size_uniform"),
+        );
+
+        let cross = Cross::new(&device, &config, &screen_uniform)?;
 
         let brush =
             BrushBuilder::using_font_bytes(include_bytes!("../../assets/fonts/TTT-Regular.otf"))
@@ -231,9 +249,10 @@ impl State {
             camera,
             camera_controller,
             camera_uniform,
+            screen_uniform,
             instance_buffer,
             pipeline,
-            // cross,
+            cross,
             world,
             atlas,
             is_surface_configured: false,
@@ -255,6 +274,8 @@ impl State {
             self.config.height = height.min(max_size);
 
             self.camera.resize(width, height);
+            self.screen_uniform
+                .update(&self.queue, &ScreenSize(width, height));
             self.brush
                 .resize_view(width as f32, height as f32, &self.queue);
 
@@ -265,6 +286,7 @@ impl State {
 
             self.is_surface_configured = true;
             self.window.request_redraw();
+            log::info!("Resized to {}x{}", width, height);
         }
     }
 
@@ -279,7 +301,7 @@ impl State {
         if self.watcher.is_dirty() {
             log::info!("Reloading shaders...");
             for path in self.watcher.take_modified_files() {
-                for pipeline in [&mut self.pipeline] {
+                for pipeline in [&mut self.pipeline, &mut self.cross.pipeline] {
                     if *path == *pipeline.shader {
                         pipeline.reload_shader(&self.device);
                         log::info!(
@@ -295,7 +317,8 @@ impl State {
             }
         }
         self.camera_controller.update_camera(&mut self.camera, dt);
-        self.camera_uniform.update(&self.queue, &self.camera);
+        self.camera_uniform
+            .update(&self.queue, &(&self.camera).into());
     }
 
     pub fn render(&mut self) -> anyhow::Result<()> {
@@ -368,24 +391,24 @@ impl State {
             render_pass.draw(0..4, 0..self.world.faces().len() as u32);
         }
 
-        // {
-        //     let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-        //         label: Some("Crosshair Pass"),
-        //         color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-        //             view: &view,
-        //             resolve_target: None,
-        //             ops: wgpu::Operations {
-        //                 load: wgpu::LoadOp::Load,
-        //                 store: wgpu::StoreOp::Store,
-        //             },
-        //             depth_slice: None,
-        //         })],
-        //         depth_stencil_attachment: None,
-        //         ..Default::default()
-        //     });
+        {
+            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("Crosshair Pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    },
+                    depth_slice: None,
+                })],
+                depth_stencil_attachment: None,
+                ..Default::default()
+            });
 
-        //     self.cross.render(&mut render_pass);
-        // }
+            self.cross.render(&mut render_pass);
+        }
 
         {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {

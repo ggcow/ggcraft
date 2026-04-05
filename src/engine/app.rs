@@ -62,13 +62,15 @@ impl ApplicationHandler<State> for App {
         {
             if let Some(proxy) = self.proxy.take() {
                 wasm_bindgen_futures::spawn_local(async move {
-                    assert!(proxy
-                        .send_event(
-                            State::new(window)
-                                .await
-                                .expect("Unable to create canvas!!!")
-                        )
-                        .is_ok())
+                    assert!(
+                        proxy
+                            .send_event(
+                                State::new(window)
+                                    .await
+                                    .expect("Unable to create canvas!!!")
+                            )
+                            .is_ok()
+                    )
                 });
             }
         }

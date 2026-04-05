@@ -14,7 +14,6 @@ use winit::{
 
 #[cfg(feature = "hot-reload")]
 use crate::engine::watcher::Watcher;
-use crate::shader_path;
 use crate::{
     engine::{
         atlas::Atlas,
@@ -25,6 +24,10 @@ use crate::{
     },
     shader_config,
 };
+use crate::{
+    engine::{cam::CameraUniform, cross::Cross},
+    shader_path,
+};
 
 pub struct State {
     surface: wgpu::Surface<'static>,
@@ -33,10 +36,9 @@ pub struct State {
     config: wgpu::SurfaceConfiguration,
     depth_texture: Texture,
     instance_buffer: wgpu::Buffer,
-    camera_buffer: wgpu::Buffer,
-    camera_bind_group: wgpu::BindGroup,
     camera: Camera,
     camera_controller: CameraController,
+    camera_uniform: CameraUniform,
     pipeline: Pipeline,
     // cross: Cross,
     world: World,
@@ -137,41 +139,12 @@ impl State {
 
         let depth_texture = Texture::create_depth_texture(&device, &config, "depth_texture");
 
-        let world = World::new();
-
         let camera = Camera::new(config.width, config.height);
-
-        let camera_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Camera Buffer"),
-            contents: bytemuck::cast_slice(camera.build_view_projection_matrix().as_slice()),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        });
-
-        let camera_bind_group_layout =
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                entries: &[wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                }],
-                label: Some("camera_bind_group_layout"),
-            });
-
-        let camera_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: &camera_bind_group_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: camera_buffer.as_entire_binding(),
-            }],
-            label: Some("camera_bind_group"),
-        });
         let camera_controller = CameraController::new();
+        let camera_uniform =
+            CameraUniform::new(&device, 0, &(&camera).into(), Some("camera_uniform"));
 
+        let world = World::new();
         let instance_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Instance Buffer"),
             contents: bytemuck::cast_slice(&world.faces()),
@@ -189,10 +162,7 @@ impl State {
         let render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Render Pipeline Layout"),
-                bind_group_layouts: &[
-                    Some(&atlas.bind_group_layout),
-                    Some(&camera_bind_group_layout),
-                ],
+                bind_group_layouts: &[Some(&atlas.bind_group_layout), Some(&camera_uniform.layout)],
                 immediate_size: 0,
             });
 
@@ -259,9 +229,8 @@ impl State {
             config,
             depth_texture,
             camera,
-            camera_bind_group,
-            camera_buffer,
             camera_controller,
+            camera_uniform,
             instance_buffer,
             pipeline,
             // cross,
@@ -326,12 +295,7 @@ impl State {
             }
         }
         self.camera_controller.update_camera(&mut self.camera, dt);
-
-        self.queue.write_buffer(
-            &self.camera_buffer,
-            0,
-            bytemuck::cast_slice(&self.camera.build_view_projection_matrix().as_slice()),
-        );
+        self.camera_uniform.update(&self.queue, &self.camera);
     }
 
     pub fn render(&mut self) -> anyhow::Result<()> {
@@ -400,28 +364,28 @@ impl State {
             render_pass.set_pipeline(&self.pipeline);
             render_pass.set_vertex_buffer(0, self.instance_buffer.slice(..));
             render_pass.set_bind_group(0, &self.atlas.bind_group, &[]);
-            render_pass.set_bind_group(1, &self.camera_bind_group, &[]);
+            render_pass.set_bind_group(1, &self.camera_uniform.bind_group, &[]);
             render_pass.draw(0..4, 0..self.world.faces().len() as u32);
         }
 
-        {
-            // let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            //     label: Some("Crosshair Pass"),
-            //     color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-            //         view: &view,
-            //         resolve_target: None,
-            //         ops: wgpu::Operations {
-            //             load: wgpu::LoadOp::Load,
-            //             store: wgpu::StoreOp::Store,
-            //         },
-            //         depth_slice: None,
-            //     })],
-            //     depth_stencil_attachment: None,
-            //     ..Default::default()
-            // });
+        // {
+        //     let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+        //         label: Some("Crosshair Pass"),
+        //         color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+        //             view: &view,
+        //             resolve_target: None,
+        //             ops: wgpu::Operations {
+        //                 load: wgpu::LoadOp::Load,
+        //                 store: wgpu::StoreOp::Store,
+        //             },
+        //             depth_slice: None,
+        //         })],
+        //         depth_stencil_attachment: None,
+        //         ..Default::default()
+        //     });
 
-            // self.cross.render(&mut render_pass);
-        }
+        //     self.cross.render(&mut render_pass);
+        // }
 
         {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {

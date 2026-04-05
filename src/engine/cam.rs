@@ -1,13 +1,33 @@
 use std::f32::consts::TAU;
 
-use nalgebra::{point, vector, Matrix4, Point3, Vector3};
+use derive_more::From;
+use nalgebra::{Matrix4, Point3, Vector3, point, vector};
 use winit::{
     dpi::PhysicalPosition,
     event::{ElementState, MouseScrollDelta},
     keyboard::KeyCode,
 };
 
+use crate::engine::uniform::Uniform;
+
 const SAFE_FRAC_PI_2: f32 = std::f32::consts::FRAC_PI_2 - 0.01;
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable, From)]
+pub struct MVP([[f32; 4]; 4]);
+pub type CameraUniform = Uniform<MVP>;
+
+impl CameraUniform {
+    pub fn update(&self, queue: &wgpu::Queue, camera: &Camera) {
+        self.write(queue, &camera.into());
+    }
+}
+
+impl From<&Camera> for MVP {
+    fn from(camera: &Camera) -> Self {
+        Self(camera.build_view_projection_matrix().into())
+    }
+}
 
 pub struct Camera {
     pub eye: Point3<f32>,
@@ -35,7 +55,7 @@ impl Camera {
         self.projection.resize(width, height);
     }
 
-    pub fn build_view_projection_matrix(&self) -> Matrix4<f32> {
+    fn build_view_projection_matrix(&self) -> Matrix4<f32> {
         let (sin_pitch, cos_pitch) = self.pitch.sin_cos();
         let (sin_yaw, cos_yaw) = self.yaw.sin_cos();
 

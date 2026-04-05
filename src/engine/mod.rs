@@ -6,6 +6,7 @@ mod mca;
 mod pipe;
 mod state;
 mod texture;
+mod uniform;
 #[cfg(feature = "hot-reload")]
 mod watcher;
 mod world;

@@ -30,16 +30,7 @@ impl Atlas {
 
     #[cfg(target_arch = "wasm32")]
     pub async fn new(device: &wgpu::Device, queue: &wgpu::Queue) -> Self {
-        // Charger toutes les textures
-        // let textures_bytes = Block::ALL
-        //     .iter()
-        //     .copied()
-        //     .map(Self::get_block_image) // fn(Block) -> DynamicImage
-        //     .map(image::DynamicImage::into_rgba8) // fn(DynamicImage) -> RgbaImage
-        //     .collect::<Vec<_>>();
-
         let mut sizes = FxHashSet::default();
-
         let mut textures_bytes = Vec::new();
         use futures::future::join_all;
         for img in join_all(Block::ALL.iter().copied().map(Self::get_block_image))

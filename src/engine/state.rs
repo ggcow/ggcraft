@@ -2,8 +2,8 @@ use instant::Instant;
 use std::{iter, sync::Arc};
 use wgpu::util::DeviceExt;
 use wgpu_text::{
-    glyph_brush::{Section as TextSection, Text},
     BrushBuilder, TextBrush,
+    glyph_brush::{Section as TextSection, Text},
 };
 use winit::{
     event::{ElementState, MouseButton},
@@ -12,15 +12,19 @@ use winit::{
     window::Window,
 };
 
-use crate::engine::{
-    atlas::Atlas,
-    cam::{Camera, CameraController},
-    pipe::Pipeline,
-    texture::Texture,
-    world::{Face, World},
-};
 #[cfg(feature = "hot-reload")]
-use crate::{engine::watcher::Watcher, SHADER_PATH};
+use crate::engine::watcher::Watcher;
+use crate::shader_path;
+use crate::{
+    engine::{
+        atlas::Atlas,
+        cam::{Camera, CameraController},
+        pipe::{FragmentStateTemplate, Pipeline, RenderPipelineTemplate, VertexStateTemplate},
+        texture::Texture,
+        world::{Face, World},
+    },
+    shader_config,
+};
 
 pub struct State {
     surface: wgpu::Surface<'static>,
@@ -34,6 +38,7 @@ pub struct State {
     camera: Camera,
     camera_controller: CameraController,
     pipeline: Pipeline,
+    // cross: Cross,
     world: World,
     atlas: Atlas,
     counting_renders_since: Instant,
@@ -178,6 +183,9 @@ impl State {
         #[cfg(not(target_arch = "wasm32"))]
         let atlas = Atlas::new(&device, &queue);
 
+        #[cfg(feature = "hot-reload")]
+        let watcher = Watcher::new(&[shader_path!("block.wgsl")]).unwrap();
+
         let render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Render Pipeline Layout"),
@@ -190,15 +198,53 @@ impl State {
 
         let pipeline = Pipeline::new(
             &device,
-            "Render Pipeline",
-            render_pipeline_layout.clone(),
-            Face::layout(),
-            config.format,
-            Some(Texture::DEPTH_FORMAT),
+            RenderPipelineTemplate {
+                label: Some("Render Pipeline"),
+                layout: Some(render_pipeline_layout),
+                vertex: VertexStateTemplate {
+                    entry_point: Some("vs_main"),
+                    buffers: vec![Face::layout().into()],
+                },
+                fragment: FragmentStateTemplate {
+                    entry_point: Some("fs_main"),
+                    targets: vec![Some(wgpu::ColorTargetState {
+                        format: config.format,
+                        blend: Some(wgpu::BlendState {
+                            alpha: wgpu::BlendComponent::REPLACE,
+                            color: wgpu::BlendComponent::REPLACE,
+                        }),
+                        write_mask: wgpu::ColorWrites::ALL,
+                    })],
+                },
+                primitive: wgpu::PrimitiveState {
+                    topology: wgpu::PrimitiveTopology::TriangleStrip,
+                    strip_index_format: None,
+                    front_face: wgpu::FrontFace::Ccw,
+                    cull_mode: Some(wgpu::Face::Front),
+                    // Setting this to anything other than Fill requires Features::NON_FILL_POLYGON_MODE
+                    polygon_mode: wgpu::PolygonMode::Fill,
+                    // Requires Features::DEPTH_CLIP_CONTROL
+                    unclipped_depth: false,
+                    // Requires Features::CONSERVATIVE_RASTERIZATION
+                    conservative: false,
+                },
+                depth_stencil: Some(wgpu::DepthStencilState {
+                    format: Texture::DEPTH_FORMAT,
+                    depth_write_enabled: Some(true),
+                    depth_compare: Some(wgpu::CompareFunction::Less),
+                    stencil: wgpu::StencilState::default(),
+                    bias: wgpu::DepthBiasState::default(),
+                }),
+                multisample: wgpu::MultisampleState {
+                    count: 1,
+                    mask: !0,
+                    alpha_to_coverage_enabled: false,
+                },
+            },
+            shader_config!("block.wgsl"),
         );
 
-        #[cfg(feature = "hot-reload")]
-        let watcher = Watcher::new(&[SHADER_PATH!()]).unwrap();
+        // let cross = Cross::new(&device, &config, 20.0)?;
 
         let brush =
             BrushBuilder::using_font_bytes(include_bytes!("../../assets/fonts/TTT-Regular.otf"))
@@ -218,6 +264,7 @@ impl State {
             camera_controller,
             instance_buffer,
             pipeline,
+            // cross,
             world,
             atlas,
             is_surface_configured: false,
@@ -262,8 +309,21 @@ impl State {
         #[cfg(feature = "hot-reload")]
         if self.watcher.is_dirty() {
             log::info!("Reloading shaders...");
-            self.pipeline.reload_shader(&self.device);
-            self.watcher.take_modified_files();
+            for path in self.watcher.take_modified_files() {
+                for pipeline in [&mut self.pipeline] {
+                    if *path == *pipeline.shader {
+                        pipeline.reload_shader(&self.device);
+                        log::info!(
+                            "Reloaded shader '{}'",
+                            if let Some(name) = path.file_name() {
+                                name.to_string_lossy()
+                            } else {
+                                path.to_string_lossy()
+                            }
+                        );
+                    }
+                }
+            }
         }
         self.camera_controller.update_camera(&mut self.camera, dt);
 
@@ -342,6 +402,25 @@ impl State {
             render_pass.set_bind_group(0, &self.atlas.bind_group, &[]);
             render_pass.set_bind_group(1, &self.camera_bind_group, &[]);
             render_pass.draw(0..4, 0..self.world.faces().len() as u32);
+        }
+
+        {
+            // let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            //     label: Some("Crosshair Pass"),
+            //     color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+            //         view: &view,
+            //         resolve_target: None,
+            //         ops: wgpu::Operations {
+            //             load: wgpu::LoadOp::Load,
+            //             store: wgpu::StoreOp::Store,
+            //         },
+            //         depth_slice: None,
+            //     })],
+            //     depth_stencil_attachment: None,
+            //     ..Default::default()
+            // });
+
+            // self.cross.render(&mut render_pass);
         }
 
         {

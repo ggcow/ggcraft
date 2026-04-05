@@ -1,5 +1,6 @@
 use notify::{Config, Event, RecommendedWatcher, RecursiveMode, Result, Watcher as _};
 use std::iter::FromIterator;
+use std::path::{Path, PathBuf};
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc, Mutex,
@@ -11,10 +12,10 @@ pub struct Watcher {
 }
 
 impl Watcher {
-    pub fn new(paths: &[&str]) -> Result<Self> {
+    pub fn new<P: AsRef<Path>>(paths: &[P]) -> Result<Self> {
         let dirty = Arc::new(AtomicBool::new(false));
         let modified_files = Arc::new(Mutex::new(Vec::from_iter(
-            paths.iter().map(|p| std::path::PathBuf::from(p)),
+            paths.iter().map(|p| p.as_ref().to_path_buf()),
         )));
         let dirty_clone = dirty.clone();
         let modified_files_clone = modified_files.clone();
@@ -49,7 +50,7 @@ impl Watcher {
         self.dirty.load(Ordering::SeqCst)
     }
 
-    pub fn take_modified_files(&self) -> Vec<std::path::PathBuf> {
+    pub fn take_modified_files(&self) -> Vec<PathBuf> {
         let mut files = self.modified_files.lock().unwrap();
         let taken_files = files.drain(..).collect();
         self.dirty.store(false, Ordering::SeqCst);

@@ -1,149 +1,161 @@
-use crate::SHADER_PATH;
 use derive_more::Deref;
+use wgpu::*;
 
 #[derive(Deref)]
 pub struct Pipeline {
     #[deref]
-    render_pipeline: wgpu::RenderPipeline,
-    #[cfg(feature = "hot-reload")]
-    pipeline_info: PipelineInfo,
+    render_pipeline: RenderPipeline,
+    template: RenderPipelineTemplate,
+    pub shader: &'static str,
 }
 
-pub struct PipelineInfo {
-    pub label: String,
-    pub layout: wgpu::PipelineLayout,
-    pub vertex_layout: wgpu::VertexBufferLayout<'static>,
-    pub color_format: wgpu::TextureFormat,
-    pub depth_format: Option<wgpu::TextureFormat>,
+#[derive(Clone)]
+pub struct VertexBufferTemplate {
+    pub array_stride: BufferAddress,
+    pub step_mode: VertexStepMode,
+    pub attributes: Vec<VertexAttribute>,
+}
+#[derive(Clone)]
+pub struct VertexStateTemplate {
+    pub entry_point: Option<&'static str>,
+    pub buffers: Vec<VertexBufferTemplate>,
+}
+
+impl<'a> From<&'a VertexBufferTemplate> for VertexBufferLayout<'a> {
+    fn from(t: &'a VertexBufferTemplate) -> Self {
+        Self {
+            array_stride: t.array_stride,
+            step_mode: t.step_mode,
+            attributes: &t.attributes,
+        }
+    }
+}
+
+impl From<VertexBufferLayout<'_>> for VertexBufferTemplate {
+    fn from(t: VertexBufferLayout) -> Self {
+        Self {
+            array_stride: t.array_stride,
+            step_mode: t.step_mode,
+            attributes: t.attributes.to_vec(),
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct FragmentStateTemplate {
+    pub entry_point: Option<&'static str>,
+    pub targets: Vec<Option<ColorTargetState>>,
+}
+
+#[derive(Clone)]
+pub struct RenderPipelineTemplate {
+    pub label: Option<&'static str>,
+    pub layout: Option<PipelineLayout>,
+    pub vertex: VertexStateTemplate,
+    pub fragment: FragmentStateTemplate,
+    pub primitive: PrimitiveState,
+    pub depth_stencil: Option<DepthStencilState>,
+    pub multisample: MultisampleState,
+}
+
+#[macro_export]
+macro_rules! shader_config {
+    ($name:literal) => {{
+        #[cfg(feature = "hot-reload")]
+        {
+            shader_path!($name)
+        }
+        #[cfg(not(feature = "hot-reload"))]
+        {
+            include_str!(shader_path!($name))
+        }
+    }};
 }
 
 impl Pipeline {
     fn build_pipeline(
-        device: &wgpu::Device,
-        info: &PipelineInfo,
-    ) -> anyhow::Result<wgpu::RenderPipeline> {
-        #[cfg(feature = "hot-reload")]
-        let shader = {
-            use wgpu::naga::{
-                front::wgsl,
-                valid::{Capabilities, ValidationFlags, Validator},
-            };
-            let source = std::fs::read_to_string(SHADER_PATH!()).map_err(|e| {
-                anyhow::anyhow!(
-                    "Failed to read shader {} ({}): {e}",
-                    info.label,
-                    SHADER_PATH!()
-                )
-            })?;
-
-            // validate that shader compiles
-            let module = wgsl::parse_str(&source)?;
-            let mut validator = Validator::new(ValidationFlags::all(), Capabilities::all());
-            validator.validate(&module)?;
-
-            device.create_shader_module(wgpu::ShaderModuleDescriptor {
-                label: Some(&info.label),
-                source: wgpu::ShaderSource::Wgsl(source.into()),
-            })
+        device: &Device,
+        template: &RenderPipelineTemplate,
+        shader: &'static str,
+    ) -> anyhow::Result<RenderPipeline> {
+        use naga::{
+            front::wgsl,
+            valid::{Capabilities, ValidationFlags, Validator},
         };
-        #[cfg(not(feature = "hot-reload"))]
-        let shader = {
-            device.create_shader_module(wgpu::ShaderModuleDescriptor {
-                label: Some(&info.label),
-                source: wgpu::ShaderSource::Wgsl(include_str!(SHADER_PATH!()).into()),
-            })
+        let source = {
+            #[cfg(feature = "hot-reload")]
+            {
+                let source = std::fs::read_to_string(shader)?;
+
+                let module = wgsl::parse_str(&source)
+                    .map_err(|e| anyhow::anyhow!(e.emit_to_string_with_path(&source, shader)))?;
+
+                let mut validator = Validator::new(ValidationFlags::all(), Capabilities::all());
+                validator
+                    .validate(&module)
+                    .map_err(|e| anyhow::anyhow!(e.emit_to_string_with_path(&source, shader)))?;
+
+                source
+            }
+
+            #[cfg(not(feature = "hot-reload"))]
+            shader
         };
 
-        let vertex_layouts = &[info.vertex_layout.clone()];
+        let shader = device.create_shader_module(ShaderModuleDescriptor {
+            label: template
+                .label
+                .map(|label| label.to_string() + "_shader")
+                .as_deref(),
+            source: ShaderSource::Wgsl(source.into()),
+        });
 
-        Ok(
-            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                label: Some(&info.label),
-                layout: Some(&info.layout),
-                vertex: wgpu::VertexState {
-                    module: &shader,
-                    entry_point: Some("vs_main"),
-                    buffers: vertex_layouts,
-                    compilation_options: Default::default(),
-                },
-                fragment: Some(wgpu::FragmentState {
-                    module: &shader,
-                    entry_point: Some("fs_main"),
-                    targets: &[Some(wgpu::ColorTargetState {
-                        format: info.color_format,
-                        blend: Some(wgpu::BlendState {
-                            alpha: wgpu::BlendComponent::REPLACE,
-                            color: wgpu::BlendComponent::REPLACE,
-                        }),
-                        write_mask: wgpu::ColorWrites::ALL,
-                    })],
-                    compilation_options: Default::default(),
-                }),
-                primitive: wgpu::PrimitiveState {
-                    topology: wgpu::PrimitiveTopology::TriangleStrip,
-                    strip_index_format: None,
-                    front_face: wgpu::FrontFace::Ccw,
-                    cull_mode: Some(wgpu::Face::Front),
-                    // Setting this to anything other than Fill requires Features::NON_FILL_POLYGON_MODE
-                    polygon_mode: wgpu::PolygonMode::Fill,
-                    // Requires Features::DEPTH_CLIP_CONTROL
-                    unclipped_depth: false,
-                    // Requires Features::CONSERVATIVE_RASTERIZATION
-                    conservative: false,
-                },
-                depth_stencil: info.depth_format.map(|format| wgpu::DepthStencilState {
-                    format,
-                    depth_write_enabled: Some(true),
-                    depth_compare: Some(wgpu::CompareFunction::Less),
-                    stencil: wgpu::StencilState::default(),
-                    bias: wgpu::DepthBiasState::default(),
-                }),
-                multisample: wgpu::MultisampleState {
-                    count: 1,
-                    mask: !0,
-                    alpha_to_coverage_enabled: false,
-                },
-                multiview_mask: None,
-                cache: None,
+        let descriptor = &RenderPipelineDescriptor {
+            label: template.label,
+            layout: template.layout.as_ref(),
+            vertex: VertexState {
+                module: &shader,
+                entry_point: template.vertex.entry_point,
+                buffers: &template
+                    .vertex
+                    .buffers
+                    .iter()
+                    .map(Into::into)
+                    .collect::<Vec<_>>(),
+                compilation_options: Default::default(),
+            },
+            primitive: template.primitive,
+            depth_stencil: template.depth_stencil.clone(),
+            multisample: template.multisample,
+            fragment: Some(FragmentState {
+                module: &shader,
+                entry_point: template.fragment.entry_point,
+                targets: &template.fragment.targets,
+                compilation_options: Default::default(),
             }),
-        )
+            multiview_mask: None,
+            cache: None,
+        };
+
+        Ok(device.create_render_pipeline(&descriptor))
     }
 
-    pub fn new(
-        device: &wgpu::Device,
-        label: impl Into<String>,
-        layout: wgpu::PipelineLayout,
-        vertex_layout: wgpu::VertexBufferLayout<'static>,
-        color_format: wgpu::TextureFormat,
-        depth_format: Option<wgpu::TextureFormat>,
-    ) -> Self {
-        let label = label.into();
-
-        let pipeline_info = PipelineInfo {
-            label,
-            layout,
-            vertex_layout,
-            color_format,
-            depth_format,
-        };
-
-        let render_pipeline =
-            Self::build_pipeline(device, &pipeline_info).expect("Failed to create render pipeline");
+    pub fn new(device: &Device, template: RenderPipelineTemplate, shader: &'static str) -> Self {
+        let render_pipeline = Self::build_pipeline(device, &template, &shader)
+            .expect("Failed to create render pipeline");
 
         Self {
             render_pipeline,
-            #[cfg(feature = "hot-reload")]
-            pipeline_info,
+            template,
+            shader,
         }
     }
 
     #[cfg(feature = "hot-reload")]
-    pub fn reload_shader(&mut self, device: &wgpu::Device) {
-        match Self::build_pipeline(device, &self.pipeline_info) {
+    pub fn reload_shader(&mut self, device: &Device) {
+        match Self::build_pipeline(device, &self.template, &self.shader) {
             Ok(render_pipeline) => self.render_pipeline = render_pipeline,
-            Err(e) => {
-                eprintln!("Failed to reload shader {}: {e}", self.pipeline_info.label);
-            }
+            Err(e) => log::error!("{e}"),
         }
     }
 }

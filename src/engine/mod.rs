@@ -11,9 +11,9 @@ mod watcher;
 mod world;
 
 #[macro_export]
-macro_rules! SHADER_PATH {
-    () => {
-        concat!(env!("CARGO_MANIFEST_DIR"), "/src/shaders/block.wgsl")
+macro_rules! shader_path {
+    ($path:expr) => {
+        concat!(env!("CARGO_MANIFEST_DIR"), "/src/shaders/", $path)
     };
 }
 

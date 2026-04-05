@@ -39,10 +39,7 @@ impl Texture {
             label,
             size,
             mip_level_count: 1,
-            #[cfg(not(feature = "msaa"))]
             sample_count: 1,
-            #[cfg(feature = "msaa")]
-            sample_count: 4,
             dimension: wgpu::TextureDimension::D2,
             format: wgpu::TextureFormat::Rgba8UnormSrgb,
             usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
@@ -99,10 +96,7 @@ impl Texture {
             label: Some(label),
             size,
             mip_level_count: 1,
-            #[cfg(not(feature = "msaa"))]
             sample_count: 1,
-            #[cfg(feature = "msaa")]
-            sample_count: 4,
             dimension: wgpu::TextureDimension::D2,
             format: Self::DEPTH_FORMAT,
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
@@ -118,8 +112,7 @@ impl Texture {
         }
     }
 
-    #[cfg(feature = "msaa")]
-    pub fn create_msaa_texture(
+    pub fn _create_msaa_texture(
         device: &wgpu::Device,
         config: &wgpu::SurfaceConfiguration,
         label: &str,

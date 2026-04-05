@@ -99,9 +99,6 @@ impl Pipeline {
                     bias: wgpu::DepthBiasState::default(),
                 }),
                 multisample: wgpu::MultisampleState {
-                    #[cfg(feature = "msaa")]
-                    count: 4,
-                    #[cfg(not(feature = "msaa"))]
                     count: 1,
                     mask: !0,
                     alpha_to_coverage_enabled: false,

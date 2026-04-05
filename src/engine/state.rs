@@ -43,9 +43,6 @@ pub struct State {
     brush: TextBrush<wgpu_text::glyph_brush::ab_glyph::FontRef<'static>>,
     debug_text: String,
 
-    #[cfg(feature = "msaa")]
-    msaa_texture: Texture,
-
     #[cfg(feature = "hot-reload")]
     watcher: Watcher,
 }
@@ -134,9 +131,6 @@ impl State {
         };
 
         let depth_texture = Texture::create_depth_texture(&device, &config, "depth_texture");
-
-        #[cfg(feature = "msaa")]
-        let msaa_texture = Texture::create_msaa_texture(&device, &config, "msaa_texture");
 
         let world = World::new();
 
@@ -232,8 +226,6 @@ impl State {
             counting_renders_since: instant::Instant::now(),
             brush,
             debug_text: String::new(),
-            #[cfg(feature = "msaa")]
-            msaa_texture,
             #[cfg(feature = "hot-reload")]
             watcher,
         })
@@ -254,12 +246,6 @@ impl State {
 
             self.depth_texture =
                 Texture::create_depth_texture(&self.device, &self.config, "depth_texture");
-
-            #[cfg(feature = "msaa")]
-            {
-                self.msaa_texture =
-                    Texture::create_msaa_texture(&self.device, &self.config, "msaa_texture");
-            }
 
             self.is_surface_configured = true;
             self.window.request_redraw();
@@ -332,13 +318,7 @@ impl State {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Render Pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    #[cfg(feature = "msaa")]
-                    view: &self.msaa_texture.view,
-                    #[cfg(not(feature = "msaa"))]
                     view: &view,
-                    #[cfg(feature = "msaa")]
-                    resolve_target: Some(&view),
-                    #[cfg(not(feature = "msaa"))]
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),

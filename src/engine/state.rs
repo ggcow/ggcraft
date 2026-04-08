@@ -1,6 +1,7 @@
 #[cfg(feature = "hot-reload")]
 use crate::engine::watcher::Watcher;
 use crate::{
+    UnwrapLog,
     engine::{
         atlas::Atlas,
         cam::{Camera, CameraController, CameraUniform},
@@ -515,24 +516,24 @@ impl State {
         }
     }
 
-    #[allow(unused)]
     pub fn handle_mouse_buttons(&mut self, button: winit::event::MouseButton, state: ElementState) {
         match (button, state == ElementState::Pressed) {
             (MouseButton::Left, true) => {
-                let _ = self
-                    .window
+                self.window
                     .set_cursor_grab(winit::window::CursorGrabMode::Locked)
                     .or_else(|_| {
                         self.window
                             .set_cursor_grab(winit::window::CursorGrabMode::Confined)
-                    });
+                    })
+                    .unwrap_log();
 
                 self.window.set_cursor_visible(false);
             }
             (MouseButton::Right, true) => {
                 self.window.set_cursor_visible(true);
                 self.window
-                    .set_cursor_grab(winit::window::CursorGrabMode::None);
+                    .set_cursor_grab(winit::window::CursorGrabMode::None)
+                    .unwrap_log();
             }
             _ => {}
         }

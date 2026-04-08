@@ -44,3 +44,15 @@ pub fn run_web() -> Result<(), wasm_bindgen::JsValue> {
 
     Ok(())
 }
+
+pub trait UnwrapLog {
+    fn unwrap_log(self);
+}
+
+impl<T, E: std::fmt::Display> UnwrapLog for Result<T, E> {
+    fn unwrap_log(self) {
+        if let Err(e) = self {
+            log::error!("{e}");
+        }
+    }
+}

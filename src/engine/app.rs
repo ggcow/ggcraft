@@ -49,10 +49,6 @@ impl ApplicationHandler<State> for App {
 
         #[cfg(not(target_arch = "wasm32"))]
         {
-            window.set_cursor_visible(false);
-            window
-                .set_cursor_grab(winit::window::CursorGrabMode::Locked)
-                .unwrap();
             // If we are not on web we can use pollster to
             // await the
             self.state = Some(pollster::block_on(State::new(window)).unwrap());

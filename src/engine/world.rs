@@ -47,7 +47,7 @@ enum BlockFaces {
         top: MaybeColored<atlas::Block>,
         sides: MaybeColored<atlas::Block>,
         bottom: MaybeColored<atlas::Block>,
-        size: [i32; 4],
+        size: [i32; 3],
     },
 }
 
@@ -55,7 +55,7 @@ impl BlockFaces {
     pub fn is_solid(&self) -> bool {
         match self {
             Self::AllSame(_) => true,
-            Self::Complex { size, .. } if size == &[2, 2, 2, 0] => true,
+            Self::Complex { size, .. } if size == &[2, 2, 2] => true,
             _ => false,
         }
     }
@@ -67,7 +67,7 @@ impl BlockFaces {
             top: MaybeColored::Colored(faces, color),
             sides: MaybeColored::Colored(faces, color),
             bottom: MaybeColored::Colored(faces, color),
-            size: [2, 2, 2, 0],
+            size: [2, 2, 2],
         }
     }
     pub fn top_side_bottom(top: atlas::Block, side: atlas::Block, bottom: atlas::Block) -> Self {
@@ -75,7 +75,7 @@ impl BlockFaces {
             top: MaybeColored::NonColored(top),
             sides: MaybeColored::NonColored(side),
             bottom: MaybeColored::NonColored(bottom),
-            size: [2, 2, 2, 0],
+            size: [2, 2, 2],
         }
     }
 }
@@ -99,9 +99,9 @@ impl BlockFaces {
             BlockFaces::Complex { bottom, .. } => bottom.map(|v| *v as u32),
         }
     }
-    fn size(&self) -> [i32; 4] {
+    fn size(&self) -> [i32; 3] {
         match self {
-            BlockFaces::AllSame(_) => [2, 2, 2, 0],
+            BlockFaces::AllSame(_) => [2, 2, 2],
             BlockFaces::Complex { size, .. } => *size,
         }
     }
@@ -229,7 +229,7 @@ impl World {
                                     bottom: MaybeColored::NonColored(block),
                                     sides: MaybeColored::NonColored(block),
                                     top: MaybeColored::NonColored(block),
-                                    size: [2, 1, 2, 0],
+                                    size: [2, 1, 2],
                                 }
                             } else {
                                 *textures.entry(n).or_default() += 1;
@@ -239,11 +239,6 @@ impl World {
                     },
                 };
                 blocks.set(x, y, z, t);
-
-                // blocks.insert((x, z), )
-                // blocks[x as usize][y as usize][z as usize] = Some(
-                //     atlas::Block::from_name(&name).unwrap_or(atlas::Block::DiamondBlock) as u32,
-                // );
             }
         }
 
@@ -266,7 +261,12 @@ impl World {
         for x in -SIZE!()..SIZE!() {
             for z in -SIZE!()..SIZE!() {
                 for y in 0..height(x, z) {
-                    blocks.set(x, y, z, BlockFaces::AllSame(atlas::Block::Dirt));
+                    blocks.set(
+                        x,
+                        y,
+                        z,
+                        BlockFaces::AllSame(MaybeColored::NonColored(atlas::Block::DiamondOre)),
+                    );
                 }
             }
         }
@@ -354,7 +354,7 @@ pub struct Face {
     /// 0x1: +0.5x
     /// 0x2: +0.5y
     /// 0x4: +0.5z
-    pub size: [i32; 4],
+    pub size: [i32; 3],
     pub tex_index: u32,
     pub color_multiplier: u32,
 }

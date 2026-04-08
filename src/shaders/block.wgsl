@@ -41,7 +41,7 @@ fn vs_main(in: VertexInput) -> VertexOutput {
         f32((in.vertexid >> 1) & 1),
     );
     let index = in.cube_position.w;
-    let scaled = M[index] * vec3<f32>(corner, 1) * (vec3<f32>(in.cube_size)/2);
+    let scaled = M[index] * vec3<f32>(corner, 1) * (vec3<f32>(in.cube_size) / 2);
     let position = vec3<f32>(in.cube_position.xyz) + scaled;
     let tex_coords = M2[index / 2] * scaled;
     out.tex_coords = vec2<f32>(tex_coords.x, 1.0 - tex_coords.y);

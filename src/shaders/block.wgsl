@@ -63,9 +63,9 @@ struct VertexOutput {
     @location(0) tex_coords: vec2<f32>,
     @location(1) normal: vec3<f32>,
     @location(2) frag_position: vec3<f32>,
-    @location(3) square_index: i32,
-    @location(4) tex_index: u32,
-    @location(5) color: u32,
+    @location(3) @interpolate(flat) square_index: i32,
+    @location(4) @interpolate(flat) tex_index: u32,
+    @location(5) @interpolate(flat) color: u32,
 }
 
 @group(0) @binding(0)

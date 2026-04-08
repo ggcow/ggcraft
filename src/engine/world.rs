@@ -8,6 +8,7 @@ macro_rules! SIZE {
 
 pub struct World {
     faces: Vec<Face>,
+    blocks: Blocks,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -242,7 +243,7 @@ impl World {
             }
         }
 
-        Self::make_faces(&blocks)
+        Self::make_faces(blocks)
     }
     // i.finish();
     // for (texture, count) in textures {
@@ -273,10 +274,10 @@ impl World {
             }
         }
 
-        Self::make_faces(&blocks)
+        Self::make_faces(blocks)
     }
 
-    fn make_faces(blocks: &Blocks) -> Self {
+    fn make_faces(blocks: Blocks) -> Self {
         let mut faces = Vec::new();
 
         for (xz, column) in &blocks.blocks {
@@ -339,11 +340,20 @@ impl World {
             }
         }
 
-        Self { faces }
+        Self { faces, blocks }
     }
 
     pub fn faces(&self) -> &[Face] {
         self.faces.as_slice()
+    }
+
+    pub fn get(&self, x: i32, y: i32, z: i32) -> Option<atlas::Block> {
+        self.blocks.get(x, y, z).and_then(|b| match b {
+            BlockFaces::AllSame(
+                MaybeColored::Colored(block, _) | MaybeColored::NonColored(block),
+            ) => Some(block),
+            _ => None,
+        })
     }
 }
 

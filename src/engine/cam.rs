@@ -55,16 +55,14 @@ impl Camera {
         self.projection.resize(width, height);
     }
 
-    fn build_view_projection_matrix(&self) -> Matrix4<f32> {
+    pub fn forward(&self) -> Vector3<f32> {
         let (sin_pitch, cos_pitch) = self.pitch.sin_cos();
         let (sin_yaw, cos_yaw) = self.yaw.sin_cos();
+        vector![cos_yaw * cos_pitch, sin_pitch, sin_yaw * cos_pitch]
+    }
 
-        let target = point![
-            self.eye.x + cos_yaw * cos_pitch,
-            self.eye.y + sin_pitch,
-            self.eye.z + sin_yaw * cos_pitch
-        ];
-
+    fn build_view_projection_matrix(&self) -> Matrix4<f32> {
+        let target = self.eye + self.forward();
         let view = Matrix4::look_at_rh(&self.eye, &target, &self.up);
         let projection = self.projection.calc_matrix();
         projection * view

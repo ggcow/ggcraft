@@ -1,6 +1,14 @@
 use bytemuck::{Pod, Zeroable};
+use derive_more::From;
 use wgpu::util::DeviceExt;
 use wgpu::*;
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug, Pod, Zeroable, From)]
+pub struct HighlightedBlock(i32, i32, i32, i32);
+
+impl UniformData for HighlightedBlock {}
+pub type HighlightedBlockUniform = Uniform<HighlightedBlock>;
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Pod, Zeroable)]

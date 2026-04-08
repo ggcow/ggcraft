@@ -7,7 +7,9 @@ use crate::{
         cross::Cross,
         pipe::{FragmentStateTemplate, Pipeline, RenderPipelineTemplate, VertexStateTemplate},
         texture::Texture,
-        uniform::{ScreenSize, ScreenUniform, UniformData},
+        uniform::{
+            HighlightedBlock, HighlightedBlockUniform, ScreenSize, ScreenUniform, UniformData,
+        },
         world::{Face, World},
     },
     shader_config, shader_path,
@@ -47,6 +49,7 @@ pub struct State {
     pub window: Arc<Window>,
     brush: TextBrush<wgpu_text::glyph_brush::ab_glyph::FontRef<'static>>,
     debug_text: String,
+    highlighted_block_uniform: HighlightedBlockUniform,
 
     #[cfg(feature = "hot-reload")]
     watcher: Watcher,
@@ -171,10 +174,20 @@ impl State {
         let watcher =
             Watcher::new(&[shader_path!("block.wgsl"), shader_path!("cross.wgsl")]).unwrap();
 
+        let highlighted_block_uniform = HighlightedBlock::from((0, 0, 0, -1)).create_uniform(
+            &device,
+            0,
+            Some("highlighted_block_uniform"),
+        );
+
         let render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Render Pipeline Layout"),
-                bind_group_layouts: &[Some(&atlas.bind_group_layout), Some(&camera_uniform.layout)],
+                bind_group_layouts: &[
+                    Some(&atlas.bind_group_layout),
+                    Some(&camera_uniform.layout),
+                    Some(&highlighted_block_uniform.layout),
+                ],
                 immediate_size: 0,
             });
 
@@ -261,6 +274,7 @@ impl State {
             counting_renders_since: instant::Instant::now(),
             brush,
             debug_text: String::new(),
+            highlighted_block_uniform,
             #[cfg(feature = "hot-reload")]
             watcher,
         })
@@ -303,15 +317,15 @@ impl State {
             for path in self.watcher.take_modified_files() {
                 for pipeline in [&mut self.pipeline, &mut self.cross.pipeline] {
                     if *path == *pipeline.shader {
-                        pipeline.reload_shader(&self.device);
                         log::info!(
-                            "Reloaded shader '{}'",
+                            "Reloading shader '{}'",
                             if let Some(name) = path.file_name() {
                                 name.to_string_lossy()
                             } else {
                                 path.to_string_lossy()
                             }
                         );
+                        pipeline.reload_shader(&self.device);
                     }
                 }
             }
@@ -319,6 +333,42 @@ impl State {
         self.camera_controller.update_camera(&mut self.camera, dt);
         self.camera_uniform
             .update(&self.queue, &(&self.camera).into());
+        if let Some((position, block)) = self.raycast() {
+            self.debug_text = format!(
+                "FPS: {}\npos: {:?}\nBlock: {}",
+                self.renders_fps, self.camera.eye, block
+            );
+            self.highlighted_block_uniform.update(
+                &self.queue,
+                &((position.0, position.1, position.2, 0).into()),
+            );
+        } else {
+            self.highlighted_block_uniform
+                .update(&self.queue, &((0, 0, 0, -1).into()));
+        }
+    }
+
+    fn raycast(&self) -> Option<((i32, i32, i32), crate::engine::atlas::Block)> {
+        let mut pos = self.camera.eye;
+
+        let step = self.camera.forward().normalize() * 0.1;
+        let mut traveled = 0.0;
+        let max_distance = 100.0;
+
+        while traveled < max_distance {
+            let position = (
+                pos.x.floor() as i32,
+                pos.y.floor() as i32,
+                pos.z.floor() as i32,
+            );
+            if let Some(block) = self.world.get(position.0, position.1, position.2) {
+                return Some((position, block));
+            }
+            pos += step;
+            traveled += step.norm();
+        }
+
+        None
     }
 
     pub fn render(&mut self) -> anyhow::Result<()> {
@@ -388,6 +438,7 @@ impl State {
             render_pass.set_vertex_buffer(0, self.instance_buffer.slice(..));
             render_pass.set_bind_group(0, &self.atlas.bind_group, &[]);
             render_pass.set_bind_group(1, &self.camera_uniform.bind_group, &[]);
+            render_pass.set_bind_group(2, &self.highlighted_block_uniform.bind_group, &[]);
             render_pass.draw(0..4, 0..self.world.faces().len() as u32);
         }
 

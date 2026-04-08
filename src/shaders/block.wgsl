@@ -50,6 +50,7 @@ fn vs_main(in: VertexInput) -> VertexOutput {
     }
 
     out.normal = normals[index];
+    out.cube_position = in.cube_position;
     out.clip_position = mvp * vec4<f32>(position, 1);
     out.frag_position = position;
     out.square_index = index;
@@ -66,12 +67,16 @@ struct VertexOutput {
     @location(3) @interpolate(flat) square_index: i32,
     @location(4) @interpolate(flat) tex_index: u32,
     @location(5) @interpolate(flat) color: u32,
+    @location(6) @interpolate(flat) cube_position: vec4<i32>,
 }
 
 @group(0) @binding(0)
 var tex: texture_2d_array<f32>;
 @group(0) @binding(1)
 var samp: sampler;
+
+@group(2) @binding(0)
+var<uniform> highlighted_block: vec4<i32>;
  
 const gamma = 1.5; // 1 - 3
 const specular_strength = 0.5; // 0 - 1
@@ -94,6 +99,13 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         (in.color >> 0) & 255,
     )) / 255;
     let texture_color: vec4<f32> = textureSample(tex, samp, in.tex_coords, in.tex_index);
+    let is_highlighted = all(in.cube_position.xyz == highlighted_block.xyz);
+
+    let edge_thickness = 0.03;
+    let edge = min(in.tex_coords.x, in.tex_coords.y) < edge_thickness || max(in.tex_coords.x, in.tex_coords.y) > 1 - edge_thickness;
+    if is_highlighted && edge {
+        return vec4<f32>(1);
+    }
     return texture_color * vec4(diffuse, 1) * block_color;
 }
  

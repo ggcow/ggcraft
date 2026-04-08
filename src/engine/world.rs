@@ -255,7 +255,7 @@ impl World {
         let mut blocks = Blocks::new();
 
         fn height(x: i32, y: i32) -> i32 {
-            (((x as f32 + y as f32) / 10.).cos() * x as f32 + SIZE!() as f32 + 10.0) as i32
+            (((x as f32 + y as f32) / 100.).cos() * x as f32 + SIZE!() as f32 + 10.0) as i32
         }
 
         for x in -SIZE!()..SIZE!() {
@@ -265,7 +265,9 @@ impl World {
                         x,
                         y,
                         z,
-                        BlockFaces::AllSame(MaybeColored::NonColored(atlas::Block::DiamondOre)),
+                        BlockFaces::AllSame(MaybeColored::NonColored(
+                            atlas::Block::ALL[y as usize % atlas::Block::ALL.len()],
+                        )),
                     );
                 }
             }

@@ -11,8 +11,8 @@ impl Atlas {
     #[cfg(target_arch = "wasm32")]
     pub async fn get_block_image(block: Block) -> image::DynamicImage {
         use wasm_bindgen_futures::JsFuture;
-        use web_sys::wasm_bindgen::JsCast as _;
         use web_sys::Response;
+        use web_sys::wasm_bindgen::JsCast as _;
 
         let url = format!("./assets/textures/block/{}", block.name());
         let resp_value = JsFuture::from(web_sys::window().unwrap().fetch_with_str(&url))

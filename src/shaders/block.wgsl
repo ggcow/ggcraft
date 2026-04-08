@@ -73,19 +73,20 @@ var tex: texture_2d_array<f32>;
 @group(0) @binding(1)
 var samp: sampler;
  
+const gamma = 1.5; // 1 - 3
+const specular_strength = 0.5; // 0 - 1
+const ambient = vec3<f32>(0.2); // 0 - 1
+
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    let light_position: vec3<f32> = vec3<f32>(100.0, 100.0, 100.0);
-    let light_color: vec3<f32> = vec3<f32>(1.0, 1.0, 1.0);
-    let light_dir: vec3<f32> = normalize(light_position - in.frag_position);
-    let diff: f32 = max(dot(in.normal, light_dir), 0.0);
-    let ambient: vec3<f32> = vec3<f32>(0.1);
-    let specular_strength: f32 = 0.5;
-    let view_dir: vec3<f32> = normalize(-in.frag_position);
-    let reflect_dir: vec3<f32> = reflect(-light_dir, in.normal);
-    let spec: f32 = pow(max(dot(view_dir, reflect_dir), 0.0), 32.0);
-    let diffuse: vec3<f32> = (ambient + diff * light_color) + (specular_strength * spec * light_color);
-
+    let light_position = vec3<f32>(0.0, 300.0, 0.0);
+    let light_color = vec3<f32>(1.0, 1.0, 1.0);
+    let light_dir = normalize(light_position - in.frag_position);
+    let diff = pow(max(dot(in.normal, light_dir), 0.0), gamma);
+    let view_dir = normalize(-in.frag_position);
+    let reflect_dir = reflect(-light_dir, in.normal);
+    let spec = pow(max(dot(view_dir, reflect_dir), 0.0), 32.0) * 0.0;
+    let diffuse = ambient + diff * light_color + specular_strength * spec * light_color;
     let block_color = vec4f(vec4(
         (in.color >> 24) & 255,
         (in.color >> 16) & 255,

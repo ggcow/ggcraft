@@ -94,6 +94,12 @@ impl State {
                 required_limits: wgpu::Limits::default(),
                 memory_hints: Default::default(),
                 trace: wgpu::Trace::Off,
+                // required_limits: Limits {
+                //     max_texture_array_layers: 2048,
+                //     max_buffer_size: 2147483647,
+                //     ..Default::default()
+                // },
+                ..Default::default()
             })
             .await?;
 

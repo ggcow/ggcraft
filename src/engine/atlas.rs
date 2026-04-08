@@ -38,7 +38,7 @@ impl Atlas {
         //     .map(image::DynamicImage::into_rgba8) // fn(DynamicImage) -> RgbaImage
         //     .collect::<Vec<_>>();
 
-        let mut sizes = FxHashSet::with_hasher(rustc_hash::FxBuildHasher::default());
+        let mut sizes = FxHashSet::default();
 
         let mut textures_bytes = Vec::new();
         use futures::future::join_all;
@@ -60,7 +60,7 @@ impl Atlas {
 
     #[cfg(not(target_arch = "wasm32"))]
     pub fn new(device: &wgpu::Device, queue: &wgpu::Queue) -> Self {
-        let mut sizes = FxHashSet::with_hasher(rustc_hash::FxBuildHasher::default());
+        let mut sizes = FxHashSet::default();
 
         let mut textures_bytes = Vec::new();
         for img in Block::ALL

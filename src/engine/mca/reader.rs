@@ -40,7 +40,7 @@ impl McLoader<'_> {
         let rz = cz >> 5;
         let mut region = self.regions.entry((rx, rz)).or_insert_with(|| {
             let fname = format!("{WORLD_REGIONS}/r.{rx}.{rz}.mca");
-            println!("loading region {rx}.{rz}");
+            log::info!("loading region {rx}.{rz}");
             let region_file = fs::File::open(fname).ok()?;
 
             let mut region = fastanvil::Region::from_stream(region_file).ok()?;
@@ -53,7 +53,7 @@ impl McLoader<'_> {
         self.chunks
             .entry((cx, cz))
             .or_insert_with(|| {
-                // println!("loading chunk {cx}.{cz}");
+                // log::info!("loading chunk {cx}.{cz}");
                 let chunk = region
                     .read_chunk(cx.rem_euclid(32) as usize, cz.rem_euclid(32) as usize)
                     .ok()??;
@@ -66,6 +66,10 @@ impl McLoader<'_> {
 
     /// get name from world pos
     pub fn get_block_name(&mut self, pos: [i32; 3]) -> Option<String> {
+        Some(self.get_block(pos)?.name.to_string())
+    }
+
+    pub fn get_block(&mut self, pos: [i32; 3]) -> Option<&BlockPalette> {
         let cx = pos[0] >> 4;
         let cz = pos[2] >> 4;
 
@@ -80,7 +84,7 @@ impl McLoader<'_> {
             .block_states;
 
         let Some(indices) = &chunklet.data else {
-            return Some(chunklet.palette[0].name.to_string());
+            return Some(&chunklet.palette[0]);
         };
 
         let len_log2 = usize::BITS - (chunklet.palette.len() - 1).leading_zeros();
@@ -94,40 +98,40 @@ impl McLoader<'_> {
         let packed_i64 = idx / how_many_packed;
         let shift = idx % how_many_packed;
 
-        // println!(
+        // log::info!(
         //     "len: {}, bits {bits_per_index} packing {how_many_packed}",
         //     chunklet.palette.len()
         // );
-        // println!("{pos:?} {idx} {packed_i64} {shift}");
+        // log::info!("{pos:?} {idx} {packed_i64} {shift}");
         let index = indices[packed_i64] >> (shift * bits_per_index);
 
         let block = &chunklet.palette[(index & ((1 << bits_per_index) - 1)) as usize];
 
-        // println!("palette: {} ({bits_per_index})", chunklet.palette.len());
+        // log::info!("palette: {} ({bits_per_index})", chunklet.palette.len());
         // std::fs::write(
         //     "/tmp/palette.jsonp",
         //     serde_json::to_vec_pretty(&chunklet.palette).unwrap(),
         // );
 
-        Some(block.name.to_string())
+        Some(block)
     }
 }
 
 #[test]
 fn test() {
     let mut loader = McLoader::new();
-    println!("{:?}", loader.get_block_name([-10, 0, -10]));
-    // println!("{:?}", loader.get_block_name([0, 0, 0]));
-    // println!("{:?}", loader.get_block_name([1, 0, 0]));
-    // println!("{:?}", loader.get_block_name([2, 0, 0]));
-    // println!("{:?}", loader.get_block_name([3, 0, 0]));
-    // println!("{:?}", loader.get_block_name([7, 0, 0]));
-    // println!("{:?}", loader.get_block_name([8, 0, 0]));
-    // println!("{:?}", loader.get_block_name([9, 0, 0]));
+    log::info!("{:?}", loader.get_block_name([-10, 0, -10]));
+    // log::info!("{:?}", loader.get_block_name([0, 0, 0]));
+    // log::info!("{:?}", loader.get_block_name([1, 0, 0]));
+    // log::info!("{:?}", loader.get_block_name([2, 0, 0]));
+    // log::info!("{:?}", loader.get_block_name([3, 0, 0]));
+    // log::info!("{:?}", loader.get_block_name([7, 0, 0]));
+    // log::info!("{:?}", loader.get_block_name([8, 0, 0]));
+    // log::info!("{:?}", loader.get_block_name([9, 0, 0]));
 
-    // println!("{:?}", loader.get_block_name([0, 1, 0]));
-    // println!("{:?}", loader.get_block_name([0, 0, 1]));
-    // println!("{:?}", loader.get_block_name([15, 15, 15]));
+    // log::info!("{:?}", loader.get_block_name([0, 1, 0]));
+    // log::info!("{:?}", loader.get_block_name([0, 0, 1]));
+    // log::info!("{:?}", loader.get_block_name([15, 15, 15]));
 }
 
 #[derive(Deserialize, Serialize, Debug)]

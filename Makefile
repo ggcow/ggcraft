@@ -1,6 +1,11 @@
-.PHONY: wasm
+.PHONY: all wasm install
+
+all: install wasm
 
 wasm:
-	wasm-pack.exe build --release --target web --no-default-features
-	cargo install simple-http-server
+	wasm-pack build --release --target web --no-default-features
 	simple-http-server -ip 80
+
+install:
+	cargo install wasm-pack
+	cargo install simple-http-server

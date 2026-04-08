@@ -2,7 +2,7 @@ name: Build & Deploy
 
 on:
   push:
-    branches: [main]
+    branches: ["*"]
 
 permissions:
   contents: read
@@ -26,10 +26,11 @@ jobs:
 
       - name: Prepare artifact
         run: |
-          mkdir dist
-          mv index.html dist/
-          mv pkg dist/
-          mv assets dist/
+          BRANCH_NAME=${GITHUB_REF_NAME##refs/heads/}
+          mkdir -p dist/$BRANCH_NAME
+          mv index.html dist/$BRANCH_NAME/
+          mv pkg dist/$BRANCH_NAME/
+          mv assets dist/$BRANCH_NAME/
 
       - uses: actions/upload-pages-artifact@v4
         with:
